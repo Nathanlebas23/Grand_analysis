@@ -129,6 +129,7 @@ class Visualizer:
         total_declenchements = len(self.data.du_ids)
         
         # Création d'une liste de tuples (DU, count) et tri en ordre croissant par count.
+
         items = list(zip(du_ids, counts))
         sorted_items = sorted(items, key=lambda x: x[1])
         du_ids_sorted, counts_sorted = zip(*sorted_items)
@@ -136,11 +137,11 @@ class Visualizer:
         plt.figure(figsize=(10, 6))
         y_positions = np.arange(len(du_ids_sorted))
         plt.barh(y_positions, counts_sorted, color='blue')
-        plt.xlabel("Nombre de déclenchements")
+        plt.xlabel("Number of triggers")
         plt.ylabel("Detector Unit")
         plt.title(
-            f"Histogramme des déclenchements par DU\n"
-            f"Total antennes déclenchées : {total_antennes} | Total déclenchements : {total_declenchements}"
+            f"Histogram of triggers per DU\n"
+            f"Total triggered antennas: {total_antennes} | Total triggers: {total_declenchements}"
         )
         plt.grid(axis='x', linestyle='--', alpha=0.7)
         plt.yticks(y_positions, du_ids_sorted)
@@ -158,9 +159,9 @@ class Visualizer:
         bins = np.arange(0.5, np.max(self.data.multiplicities) + 1.5, 1)
         plt.figure(figsize=(10, 6))
         plt.hist(self.data.multiplicities, bins=bins, color='lightgreen', edgecolor='black')
-        plt.xlabel("Multiplicité (nombre d'antennes déclenchées)")
-        plt.ylabel("Indice de coincidence")
-        plt.title("Histogramme de la multiplicité des coincidences")
+        plt.xlabel("Multiplicity (number of triggered antennas)")
+        plt.ylabel("Coincidence index")
+        plt.title("Histogram of coincidence multiplicity")
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         
         # Highlight abnormal multiplicities (1, 2, 3).
@@ -168,7 +169,7 @@ class Visualizer:
             count = np.sum(self.data.multiplicities == mult)
             if count > 0:
                 plt.text(mult, count + 1, f"Anormal: {count}", ha='center', color='red', fontsize=12)
-        plt.axvline(4, color='red', linestyle='--', label="Multiplicité minimale attendue : 4")
+        plt.axvline(4, color='red', linestyle='--', label="Minimal multiplicity expected : 4")
         plt.legend()
         plt.tight_layout()
         plt.show()

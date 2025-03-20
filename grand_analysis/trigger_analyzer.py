@@ -84,7 +84,7 @@ class TriggerAnalyzer:
             axes[i].bar(['X only', 'Y only', 'X & Y'], [count_x_only, count_y_only, count_both],
                         color=['skyblue', 'salmon', 'forestgreen'])
             axes[i].set_title(f'DU {du}')
-            axes[i].set_ylabel("Nombre de triggers")
+            axes[i].set_ylabel("Nombre of triggers")
             axes[i].set_ylim(0, n_event/n_dus * 2) 
         
         # Masquage des sous-plots non utilisés.
