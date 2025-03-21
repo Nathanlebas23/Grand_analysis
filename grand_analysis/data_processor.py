@@ -1,7 +1,7 @@
 import os
 import numpy as np
-import grand.dataio as rt
-
+#import grand.dataio as rt
+import grand.dataio.root_trees as rt
 class DataProcessor:
     """
     Class to process ROOT data files and extract event information.
@@ -28,7 +28,8 @@ class DataProcessor:
         For each event, loop over all activated detection units (DUs) so that no information is lost.
         """
         for fname in self.file_list:
-            root_file = rt.DataFile(fname)
+            # root_file = rt.DataFile(fname)
+            root_file = rt.DataTree(fname)
             n_entries = root_file.tadc.get_number_of_entries()
             print(f"traitement du fichier : ", fname)
 
