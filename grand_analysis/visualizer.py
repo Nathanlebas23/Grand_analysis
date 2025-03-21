@@ -199,3 +199,32 @@ class Visualizer:
         plt.legend(loc='best')
         plt.title("Event Timing per Detection Unit")
         plt.show()
+
+    def plot_time_trigger(self):
+        """
+        Plot the time trigger
+        
+        Cette méthode affiche l'évolution cumulée des déclenchements en fonction du temps.
+        Les temps de déclenchement sont triés et convertis en secondes (relativement au premier déclenchement).
+        Le graphique montre ainsi comment le nombre total de déclenchements augmente au cours du temps.
+        """
+        # Récupération des temps de déclenchement depuis les données
+        trigger_times_ns = self.data.trigger_times
+        
+        # Tri des temps de déclenchement
+        sorted_trigger_times = np.sort(trigger_times_ns)
+        
+        # Conversion en secondes par rapport au premier déclenchement
+        t_sec = (sorted_trigger_times - sorted_trigger_times[0]) / 1e9
+        
+        # Calcul du nombre cumulatif de déclenchements
+        cumulative_triggers = np.arange(1, len(t_sec) + 1)
+        
+        plt.figure()
+        # Affichage sous forme de marche pour mettre en évidence les incréments discrets
+        plt.plot(t_sec, cumulative_triggers, drawstyle='steps-post')
+        plt.xlabel("Temps depuis le premier déclenchement (s)")
+        plt.ylabel("Nombre cumulatif de déclenchements")
+        plt.title("Évolution des déclenchements dans le temps")
+        plt.grid(True)
+        plt.show()

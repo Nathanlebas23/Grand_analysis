@@ -254,7 +254,7 @@ class SpectrumAnalyzer:
                 if isinstance(channel, list) and len(channel) == 2:
                     trace1 = traces[ev, channel[0], :npts]
                     trace2 = traces[ev, channel[1], :npts]
-                    # Combinaison des deux canaux: V = sqrt(trace1² + trace2²)
+                    # Combinaison des deux canaux: V = sqrt(trace1² + trace2²)   pas sur de ca encore
                     trace_to_use = np.sqrt(trace1**2 + trace2**2)
                 else:
                     trace_to_use = traces[ev, channel, :npts]
