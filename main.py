@@ -27,16 +27,14 @@ import time
 def main():
     start_time = time.time()
     
-    # Set the data directory and file list.
-
-    # file_list_dir = "/home/nlebas/Documents/LPNHE/GRAND/Local_Data/"
-    # file_list = [data_dir + "GP80_20250228_233748_RUN10069_CD_20dB_7DUs_GP80_t3Test-CD-10000-22.root"]
     # Répertoire où se trouve le fichier texte contenant la liste.
+    # file_list_dir = "/home/nlebas/Documents/LPNHE/GRAND/Local_Data/"
     file_list_dir = "/sps/grand/nlebas/grand/Grand_analysis/"
     
     # Répertoire contenant les fichiers de données.
     data_files_dir = "/sps/grand/data/gp80/GrandRoot/2025/02/"
     # data_files_dir = "/home/nlebas/Documents"
+    
     # Chemin complet du fichier texte.
     file_list_path = os.path.join(file_list_dir, "data_202502_20_28.txt")
 
@@ -63,21 +61,21 @@ def main():
     
     # Visualize different aspects of the data.
     viz = Visualizer(processor, dt=2e-9)
-    # viz.plot_geolocation()
+    viz.plot_geolocation()
     # viz.visualize_event(target_du=1046, evtid=23, channels=[1,2])
-    # viz.plot_du_histogram()
+    viz.plot_du_histogram()
     # viz.plot_multiplicity_histogram()
     viz.plot_time_trigger()
     
     # Perform spectrum analysis.
     spec = SpectrumAnalyzer(processor, dt=2e-9)  # dt de 2 ns pour 500 MHz
     # spec.visualize_mean_fft(channels=[1], xlim=(0, 250), min_spectra=100, apply_notch=False, only_galacti_noise=True , f_sample=500e6, kadc=1.8/16384, R=50)
-    # spec.analyze_baseline_vs_time(channel=1, freq_band=(60, 80), du=1049 ,  apply_notch=False, galactic_noise=True, f_sample=500e6, kadc=1.8/16384, R=50, fit_sine=True)
+    spec.analyze_baseline_vs_time(channel=1, freq_band=(60, 80), du=1049 ,  apply_notch=False, galactic_noise=True, f_sample=500e6, kadc=1.8/16384, R=50, fit_sine=True)
 
     # Perform trigger analysis.
-    # trigpat = TriggerAnalyzer(processor, viz, dt=2e-9)
+    trigpat = TriggerAnalyzer(processor, viz, dt=2e-9)
     # trigpat.plot_histograms_trigger_counts()
-    # trigpat.plot_trigger_rate_map()
+    trigpat.plot_trigger_rate_map()
 
     
     # Visualiser les histogrammes de chi2
