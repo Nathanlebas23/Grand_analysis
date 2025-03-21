@@ -28,8 +28,7 @@ class DataProcessor:
         For each event, loop over all activated detection units (DUs) so that no information is lost.
         """
         for fname in self.file_list:
-            # root_file = rt.DataFile(fname)
-            root_file = rt.DataTree(fname)
+            root_file = rt.DataFile(fname)
             n_entries = root_file.tadc.get_number_of_entries()
             print(f"traitement du fichier : ", fname)
 
