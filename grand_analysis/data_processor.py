@@ -1,7 +1,8 @@
 import os
 import numpy as np
-#import grand.dataio as rt
-import grand.dataio.root_trees as rt
+import grand.dataio as rt # Version locale pull
+# import grand.dataio.root_trees as rt  # Version CC
+
 class DataProcessor:
     """
     Class to process ROOT data files and extract event information.
