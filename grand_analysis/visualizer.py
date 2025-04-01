@@ -118,6 +118,7 @@ class Visualizer:
         plt.tight_layout()
         plt.show()
 
+        return trace_event
 
     def plot_du_histogram(self):
         """
@@ -156,6 +157,7 @@ class Visualizer:
         """
         Plot the histogram of event multiplicities (i.e. number of detection units triggered per event).
         """
+        total_declenchements = len(self.data.du_ids)
         bins = np.arange(0.5, np.max(self.data.multiplicities) + 1.5, 1)
         plt.figure(figsize=(10, 6))
         plt.hist(self.data.multiplicities, bins=bins, color='lightgreen', edgecolor='black')
@@ -168,7 +170,7 @@ class Visualizer:
         for mult in range(1, 4):
             count = np.sum(self.data.multiplicities == mult)
             if count > 0:
-                plt.text(mult, count + 1, f"Anormal: {count}", ha='center', color='red', fontsize=12)
+                plt.text(mult, count + 1, f"Anormal: {count} / {total_declenchements}", ha='center', color='red', fontsize=12)
         plt.axvline(4, color='red', linestyle='--', label="Minimal multiplicity expected : 4")
         plt.legend()
         plt.tight_layout()

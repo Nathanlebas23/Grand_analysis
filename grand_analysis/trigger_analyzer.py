@@ -220,3 +220,34 @@ class TriggerAnalyzer:
         ax.set_aspect('equal', adjustable='box')
         plt.tight_layout()
         plt.show()
+
+    def trigger_vs_time(self, bin_width=60):
+        
+        event_times_ns = self.data.trigger_times * 1e9 + self.data.trigger_nanos
+        event_times = event_times_ns / 1e9  
+        
+        unique_du_ids = np.unique(self.data.du_ids)
+        
+        t_min = event_times.min()
+        t_max = event_times.max()
+        bins = np.arange(t_min, t_max + bin_width, bin_width)
+        bin_centers = (bins[:-1] + bins[1:]) / 2
+        
+        plt.figure(figsize=(12, 8))
+        
+        for du in unique_du_ids:
+            mask = self.data.du_ids == du
+            du_times = event_times[mask]
+            if len(du_times) == 0:
+                continue
+            counts, _ = np.histogram(du_times, bins=bins)
+            rate = counts / bin_width
+            plt.plot(bin_centers, rate, marker='o', label=f"DU {du}")
+        
+        plt.xlabel("Time (s)")
+        plt.ylabel("Trigger Rate (Hz)")
+        plt.title("Evolution du taux de triggers par DU")
+        plt.legend()
+        plt.grid(True, linestyle="--", alpha=0.7)
+        plt.tight_layout()
+        plt.show()
