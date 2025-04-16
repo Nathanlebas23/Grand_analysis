@@ -77,270 +77,380 @@ class SpectrumAnalyzer:
             y[n]  = a1 * y[n-4] + a2 * y[n-8] + y2[n-2] + b5 * y2[n-4] + b6 * y2[n-6]
         return y
 
-    def visualize_PSD(self, channels=[0, 1, 2, 3], xlim=(0, 250), min_spectra=100,
-                        apply_notch=False, f_sample=None, only_galacti_noise=False, kadc=1.8/16384, VGA_gain=100, R=50):
+    def visualize_PSD(self, channels=[1], xlim=(0, 250), min_spectra=100,
+                    apply_notch=False, f_sample=None, only_pre_trigger=False,
+                    kadc=1.8/16384, VGA_gain=100, R=50):
         """
-        Visualizes the mean Power Spectral Density (PSD) for the specified channels and each Detection Unit (DU).
-        Applies a Blackman window and averages over all events for each DU with at least `min_spectra` events.
-        
-        If apply_notch is True, all four notch filters are applied sequentially.
-        The PSD is normalized as:
-            PSD = |FFT|² / (N² · Δν_bin · R)
-        and converted to units of [V²/MHz].
+        Visualizes and updates the cumulative mean Power Spectral Density (PSD)
+        for each Detection Unit (DU) and specified channels.
+
+        The method processes the current file and computes the mean PSD for each DU.
+        It then updates cumulative PSD averages stored as class attributes so that
+        the overall mean is computed incrementally without keeping all raw data.
 
         Parameters:
-        - channels: list of channel indices to analyze (default: [1,2,3]).
-        - xlim: tuple, x-axis limits for the frequency in MHz (default: (0, 250)).
-        - min_spectra: minimum number of spectra (events) required to compute the mean PSD.
-        - apply_notch: bool, whether to apply all four notch filters to each trace.
-        - f_sample: sampling frequency in Hz. If None, it is set to 1/self.dt.
-        - only_galacti_noise: if True, uses only channel 0 and truncates traces to 250 samples.
-        - kadc: ADC conversion factor in V/ADC unit (default: 1.8/16384 for a 14-bit ADC).
-        - VGA_gain: voltage gain of the analog chain (unitless multiplicative factor).
+        - channels: list of channel indices to analyze (default: [1]).
+        - xlim: tuple, x-axis limits for frequency in MHz (default: (0, 250)).
+        - min_spectra: minimum number of spectra (events) required for analysis.
+        - apply_notch: bool, if True applies all four notch filters to each trace.
+        - f_sample: sampling frequency in Hz. If None, set to 1/self.dt.
+        - only_pre_trigger: if True, uses only channel 0 and truncates traces to 250 samples.
+        - kadc: ADC conversion factor in V/ADC unit.
+        - VGA_gain: voltage gain of the analog chain.
+        - R: resistance used in PSD normalization.
         """
 
+        # Set sampling frequency if not provided
         if f_sample is None:
-            f_sample = 1. / self.dt
+            f_sample = 1.0 / self.dt
 
+        # Initialize cumulative dictionaries as class attributes if not already present.
+        # self.cumulative_psd stores for each DU a dictionary with key=channel and value=cumulative mean PSD array.
+        # self.cumulative_events stores the total number of events processed for each DU.
+        if not hasattr(self, 'cumulative_psd'):
+            self.cumulative_psd = {}
+        if not hasattr(self, 'cumulative_events'):
+            self.cumulative_events = {}
+
+        # Retrieve unique detection units (DUs) in the current file.
         unique_dus = np.unique(self.data.du_ids)
-        plt.figure(figsize=(10, 6))        
-        i = 0
+        plt.figure(figsize=(10, 6))
+
+        # Process each DU in the current file.
         for du in unique_dus:
-            i+= 1
             mask = self.data.du_ids == du
-            traces_du = self.data.traces[mask]  # Expected (n_events, n_channels, n_samples)
-            
-            # Verify the dimension of traces_du
-            if traces_du.ndim < 3:
-                print(f"No event found for DU {du}.")
-                continue
-
+            traces_du = self.data.traces[mask]  # Expected shape: (n_events, n_channels, n_samples)
             n_events = traces_du.shape[0]
-
+            print(traces_du.shape)
+            # Check if the DU has enough events to be processed.
             if n_events < min_spectra:
                 print(f"DU {du} has only {n_events} spectra (< {min_spectra}). Skipping.")
                 continue
 
             npts_original = traces_du.shape[2]
-            npts = 250 if only_galacti_noise else npts_original
-
+            npts = 250 if only_pre_trigger else npts_original
             if npts > npts_original:
                 print(f"Warning: Requested {npts} points but only {npts_original} available. Truncating to available size.")
                 npts = npts_original
 
+            # Calculate frequency resolution and generate frequency arrays.
             delta_nu = f_sample / npts  # Frequency bin width in Hz
             freq_hz = rfftfreq(npts, self.dt)
             freq_MHz = freq_hz / 1e6
 
+            # Create a Blackman window and compute its power correction factor.
             window = np.blackman(npts)
-            power_window = np.sum(window ** 2) / npts  # Power correction factor due to windowing
+            power_window = np.sum(window ** 2) / npts
 
+            # Initialize PSD accumulator for each channel.
             psd_accum = {ch: np.zeros(len(freq_hz)) for ch in channels}
 
+            # Loop through all events and channels to compute PSD.
             for ev in range(n_events):
                 for ch in channels:
-                    # If galactic noise only mode, always use channel 0
-                    trace = traces_du[ev, 0, :npts] if only_galacti_noise else traces_du[ev, ch, :npts]
+                    # Use only pre-trigger data if specified, otherwise the full channel trace.
+                    trace = traces_du[ev, 0, :npts] if only_pre_trigger else traces_du[ev, ch, :npts]
 
+                    # Apply notch filters if requested.
                     if apply_notch:
                         for filt_id in [1, 2, 3, 4]:
                             trace = SpectrumAnalyzer.apply_notch_filter(trace, filt_id, f_sample)
 
+                    # Apply windowing and compute the FFT.
                     trace_win = trace * window
                     fft_val = rfft(trace_win)
                     psd_event = np.abs(fft_val) ** 2 / power_window
                     psd_accum[ch] += psd_event
 
+            # Process each channel to compute the mean PSD and update cumulative averages.
             for ch in channels:
+                # Calculate the mean PSD for this file.
                 mean_psd = psd_accum[ch] / n_events
-                mean_psd *= (kadc ** 2) * VGA_gain  # Convert from ADC² to V²
+                mean_psd *= (kadc ** 2) * VGA_gain  # Convert ADC² to V²
 
-                # Normalize by (N² · Δν_bin), then convert from V²/Hz to V²/MHz
-                mean_psd /= (npts ** 2 * delta_nu) * R # Division per R is weird maybe not homogeneous
-                mean_psd *= 1e6  # Convert to V²/MHz
+                # Normalize the PSD: divide by (N² * delta_nu) and then convert V²/Hz to V²/MHz.
+                mean_psd /= (npts ** 2 * delta_nu) * R
+                mean_psd *= 1e6
 
-                # Compensate for single-sided FFT (except DC and Nyquist)
+                # Adjust for single-sided FFT (except DC and Nyquist).
                 if len(mean_psd) > 2:
                     mean_psd[1:-1] *= 2
 
-                plt.semilogy(freq_MHz, mean_psd, lw=1, label=f'DU {du} - Ch{ch}')
+                # Update cumulative average using weighted incremental update.
+                if du in self.cumulative_psd:
+                    n_prev = self.cumulative_events[du]
+                    # If the channel already exists for this DU, update its cumulative average.
+                    if ch in self.cumulative_psd[du]:
+                        self.cumulative_psd[du][ch] = (
+                            self.cumulative_psd[du][ch] * n_prev + mean_psd * n_events
+                        ) / (n_prev + n_events)
+                    else:
+                        # If channel data is new, initialize it.
+                        self.cumulative_psd[du][ch] = mean_psd.copy()
+                    self.cumulative_events[du] += n_events
+                else:
+                    # Initialize cumulative PSD and event counter for new DU.
+                    self.cumulative_psd[du] = {ch: mean_psd.copy()}
+                    self.cumulative_events[du] = n_events
 
+                # Plot the updated cumulative PSD for the current DU and channel.
+                plt.semilogy(freq_MHz, self.cumulative_psd[du][ch],
+                            lw=1, label=f'DU {du} - Ch{ch}')
+
+        # Configure and save the plot.
         plt.xlabel("Frequency (MHz)")
         plt.ylabel("PSD [V²/MHz]")
         plt.xlim(xlim)
         plt.grid(True, linestyle='--', alpha=0.7)
-
-        if only_galacti_noise:
-            title = "Mean PSD - Galactic Noise Only"
-        else:
-            title = "Mean PSD Spectrum"
-
-        if apply_notch:
-            title += " (with notch filters)"
-        else:
-            title += " (no notch)"
-
+        title = "Cumulative Mean PSD Spectrum"
+        if only_pre_trigger:
+            title = "Cumulative Mean PSD - Pre-trigger Only"
+        title += " (with notch filters)" if apply_notch else " (no notch)"
         plt.title(title)
         handles, labels = plt.gca().get_legend_handles_labels()
         if handles:
             plt.legend(loc='best', fontsize=8)
         plt.tight_layout()
+        plt.savefig('cumulative_mean_PSD.png')
         plt.show()
 
 
-    def analyze_baseline_vs_time(self, channel, freq_band, du=None, apply_notch=False, 
-                            f_sample=None, kadc=1.8/16384, R=50, VGA_gain=100, 
-                            fit_sine=False, galactic_noise=False):
-        """
-        Analyse l'écart-type du bruit galactique versus le temps dans une bande de fréquence donnée.
-        
-        Pour chaque événement, on calcule la PSD puis on l'intègre sur la bande de fréquence 
-        d'intérêt pour obtenir la variance (via le théorème de Parseval), et enfin on en extrait 
-        l'écart-type en prenant la racine carrée.
-        
-        Parameters:
-        - channel: int ou liste de deux ints. Si int, seul ce canal est utilisé.
-                Si liste, la tension combinée est calculée comme V = sqrt(V1² + V2²).
-        - freq_band: tuple (f_low, f_high) en MHz définissant la bande de fréquence.
-        - du: int ou None, si fourni, seuls les événements de cet ID DU sont analysés.
-        - apply_notch: bool, si True, applique successivement les quatre filtres notch à chaque trace avant FFT.
-        - f_sample: Fréquence d'échantillonnage en Hz. Si None, est définie à 1/self.dt.
-        - kadc: Facteur de conversion des ADC counts en volts (défaut : 1.8/16384).
-        - R: Impédance (défaut : 50 Ohm).
-        - VGA_gain: Gain du VGA (défaut : 100).
-        - fit_sine: bool, si True, ajuste sinusoïdalement l'écart-type versus le temps.
-        - galactic_noise: bool, si True, utilise seulement les 250 premiers échantillons du canal 0.
-        """
-        
-        if f_sample is None:
-            f_sample = 1. / self.dt
+    def analyze_baseline_vs_time(self, channel=[1], freq_band=None, du=None, apply_notch=False, 
+                                f_sample=None, kadc=1.8/16384, R=50, VGA_gain=100, 
+                                fit_sine=False, only_pre_trigger=False):
+            """
+            Analyze the standard deviation time within a specified frequency band.
+            For each event, the PSD is computed and then integrated over the frequency band of interest 
+            to obtain the variance (using Parseval's theorem). The standard deviation is then extracted 
+            by taking the square root.
+            
+            Parameters:
+            - channel: int or list. If int, only that channel is used.
+            - freq_band: tuple (f_low, f_high) in MHz defining the frequency band.
+            - du: int, list of int, or None. If int or list, only events from the specified DU(s) are analyzed.
+                If None, all DUs present in the data are analyzed.
+            - apply_notch: bool, if True, successively apply notch filters.
+            - f_sample: Sampling frequency in Hz. If None, it is set to 1/self.dt.
+            - kadc: Conversion factor from ADC counts to volts (default: 1.8/16384).
+            - R: Impedance (default: 50 Ohm).
+            - VGA_gain: VGA gain (default: 100).
+            - fit_sine: bool, if True, perform a sine fit on the standard deviation vs. time.
+            - only_pre_trigger: bool, if True, use only the pre-trigger part.
+            """
+            
+            if f_sample is None:
+                f_sample = 1. / self.dt
 
-        # Définir le masque selon que 'du' est fourni ou non.
-        mask = self.data.du_ids == du if du is not None else slice(None)
-
-        # Sélectionner les traces et calculer les temps d'événement.
-
-
-        # Sélectionner les traces et calculer les temps d'événement.
-        traces = self.data.traces[mask]
-        event_times = self.data.trigger_times[mask] * 1e9 + self.data.trigger_nanos[mask]
-
-        # Vérifier que des événements sont présents et que le tableau a la bonne forme.
-        if traces.ndim < 3 or traces.size == 0:
-            print(f"Aucun événement trouvé pour DU {du}. Analyse interrompue.")
-            return
-
-        # Si le mode galactic_noise est activé, on conserve uniquement les 250 premiers échantillons du canal 0.
-        if galactic_noise:
-            traces = traces[:, 0, :250]  # Résultat de forme (n_events, 250)
-            npts = traces.shape[1]
-        else:
-            npts = traces.shape[2]
-
-        # Vérifier que le DU choisi possède suffisamment d'événements.
-        n_events = traces.shape[0]
-        if du is not None and n_events < 300:
-            print(f"DU {du} ne possède que {n_events} événements (< 300). Analyse interrompue.")
-            return
-
-        # Convertir les temps en secondes relatifs au premier événement.
-        event_times = (event_times - event_times.min()) * 1e-9  # en secondes
-
-        # Vérifier que la fenêtre temporelle est d'au moins une semaine (604800 s)
-        if event_times[-1] < 604800:
-            print(f"La fenêtre temporelle ({event_times[-1]:.0f} s) est inférieure à une semaine. "
-                "L'ajustement sinusoïdal ne sera pas réalisé.")
-            fit_sine = False
-
-        # Liste pour stocker l'écart-type pour chaque événement.
-        std_list = []
-
-        delta_nu = f_sample / npts  # largeur du bin en Hz
-
-        # Créer la fenêtre Blackman et calculer le facteur de correction.
-        bw = blackman(npts)
-        pow_bw = np.sum(bw * bw) / npts
-
-        # Calculer l'axe des fréquences en MHz.
-        freq_hz = rfftfreq(npts, self.dt)
-        freq_MHz = freq_hz / 1e6
-
-        f_low, f_high = freq_band
-        band_mask = (freq_MHz >= f_low) & (freq_MHz <= f_high)
-
-        # Pour chaque événement, calculer la PSD et en extraire l'écart-type dans la bande d'intérêt.
-        for ev in range(n_events):
-            # Sélection de la trace selon le mode galactic_noise.
-            if not galactic_noise:
-                if isinstance(channel, list) and len(channel) == 2:
-                    trace1 = traces[ev, channel[0], :npts]
-                    trace2 = traces[ev, channel[3], :npts]
-                    # Combinaison des deux canaux: V = sqrt(trace1² + trace2²)   pas sur de ca encore
-                    trace_to_use = np.sqrt(trace1**2 + trace2**2)
-                else:
-                    trace_to_use = traces[ev, channel, :npts]
+            # If du is None, get all unique DU IDs from the data; otherwise, ensure du_list is a list.
+            if du is None:
+                du_list = np.unique(self.data.du_ids)
             else:
-                trace_to_use = traces[ev, :npts]
+                du_list = du if isinstance(du, list) else [du]
 
-            if apply_notch:
-                trace_filtered = trace_to_use
-                for filt in [1, 2, 3, 4]:
-                    trace_filtered = SpectrumAnalyzer.apply_notch_filter(trace_filtered, filt, f_sample)
-                trace_to_use = trace_filtered
+            # Create a single figure for all DUs
+            plt.figure(figsize=(10, 6))
+            
+            # Get the default color cycle from matplotlib
+            prop_cycle = plt.rcParams['axes.prop_cycle']
+            colors = prop_cycle.by_key()['color']
+            
+            for idx, current_du in enumerate(du_list):
+                # Select color from the cycle
+                color = colors[idx % len(colors)]
+                
+                mask = self.data.du_ids == current_du if current_du is not None else slice(None)
+                traces = self.data.traces[mask]
+                event_times = self.data.trigger_times[mask] * 1e9 + self.data.trigger_nanos[mask]
+                
+                if traces.size == 0:
+                    print(f"No event for DU {current_du}. Analysis stopped.")
+                    continue
 
-            # Appliquer la fenêtre Blackman.
-            trace_win = trace_to_use * bw
+                if only_pre_trigger:
+                    traces = traces[:, 0, :250]  # Shape (n_events, 250)
+                    npts = traces.shape[1]
+                else:
+                    npts = traces.shape[2] # Should be 1024
 
-            # Calcul de la FFT et de la PSD (en unités ADC²/Hz).
-            fft_val = rfft(trace_win)
-            psd_event = np.abs(fft_val) ** 2 / pow_bw
+                n_events = traces.shape[0] 
+                if current_du is not None and n_events < 100:
+                    print(f"DU {current_du} has {n_events} events (< 100). Analysis stopped.")
+                    continue
 
-            # Conversion ADC -> V² : appliquer (kadc)² et le gain VGA.
-            psd_event *= (kadc)**2 * VGA_gain
+                # Convert times to seconds relative to the first event.
+                event_times = (event_times - event_times.min()) * 1e-9  # in seconds
 
-            # Normalisation : division par (npts² * Δν_bin * R) puis conversion en V²/MHz.
-            psd_event /= (npts * npts * delta_nu * R)
-            psd_event *= 1e6  # Passage de V²/Hz à V²/MHz
-            # Pour un spectre à un seul côté, multiplier les bins intermédiaires par 2.
-            psd_event[1:-1] *= 2
+                fit_sine_flag = fit_sine
+                if event_times[-1] < 604800:
+                    fit_sine_flag = False
 
-            # Intégration de la PSD sur la bande d'intérêt pour obtenir la variance,
-            # puis extraction de l'écart-type (std).
-            integrated_power = np.sum(psd_event[band_mask]) * (delta_nu / 1e6)
-            std = np.sqrt(integrated_power)
-            std_list.append(std)
+                std_list = []
+                delta_nu = f_sample / npts  # Frequency bin width in Hz
 
-        std_list = np.array(std_list)
+                # Create the Blackman window and compute the correction factor.
+                bw = np.blackman(npts)
+                pow_bw = np.sum(bw * bw) / npts
+
+                # Compute the frequency axis in MHz.
+                freq_hz = rfftfreq(npts, self.dt)
+                freq_MHz = freq_hz / 1e6
+
+                f_low, f_high = freq_band
+                band_mask = (freq_MHz >= f_low) & (freq_MHz <= f_high)
+
+                for ev in range(n_events):
+                    if not only_pre_trigger:
+                        trace_to_use = traces[ev, channel, :npts].astype(float)
+                        if isinstance(channel, list) and len(channel) > 1:
+                            trace_to_use = np.sqrt(np.sum(trace_to_use**2, axis=0))
+                        else:
+                            trace_to_use = trace_to_use[0]
+                    else:
+                        trace_to_use = traces[ev, :npts]
+
+                    if apply_notch:
+                        trace_filtered = trace_to_use
+                        for filt in [1, 2, 3, 4]:
+                            trace_filtered = SpectrumAnalyzer.apply_notch_filter(trace_filtered, filt, f_sample)
+                        trace_to_use = trace_filtered
+
+                    # Apply the Blackman window.
+                    trace_win = trace_to_use * bw
+
+                    # Compute the FFT and the PSD (in ADC²/Hz).
+                    fft_val = rfft(trace_win)
+                    psd_event = np.abs(fft_val)**2 / pow_bw
+
+                    # ADC to V² conversion: apply (kadc)² and VGA gain.
+                    psd_event *= (kadc)**2 * VGA_gain
+
+                    # Normalization: divide by (npts² * delta_nu * R) and convert to V²/MHz.
+                    psd_event /= (npts**2 * delta_nu * R)
+                    psd_event *= 1e6  # Convert from V²/Hz to V²/MHz
+                    psd_event[1:-1] *= 2  # Single-sided spectrum correction
+
+                    # Integrate the PSD over the frequency band and compute the standard deviation.
+                    integrated_power = np.sum(psd_event[band_mask]) * (delta_nu / 1e6)
+                    std = np.sqrt(integrated_power)
+                    std_list.append(std)
+
+                std_list = np.array(std_list)
+                
+                # Plot the standard deviation vs. time for the current DU
+                plt.plot(event_times, std_list, '.', color=color, label=f"DU {current_du}")
+                
+                # If sine fitting is enabled, perform the sine fit and plot the fitted curve.
+                if fit_sine_flag:
+                    def sine_model(t, A, f, phase, offset):
+                        return A * np.sin(2 * np.pi * f * t + phase) + offset
+
+                    A0 = (std_list.max() - std_list.min()) / 2
+                    offset0 = std_list.mean()
+                    f0 = 1 / 86400  # 24-hour period
+                    phase0 = 0
+                    p0 = [A0, f0, phase0, offset0]
+                    try:
+                        popt, pcov = curve_fit(sine_model, event_times, std_list, p0=p0)
+                        fitted_curve = sine_model(event_times, *popt)
+                        plt.plot(event_times, fitted_curve, '-', color=color, label=f"Sine Fit DU {current_du}")
+                        print("DU {}: Fit parameters: A = {:.3g}, f = {:.3g} Hz, phase = {:.3g}, offset = {:.3g}".format(
+                            current_du, *popt))
+                    except Exception as e:
+                        print(f"DU {current_du}: Error during sine fitting: {e}")
+
+            plt.title(f"Baseline vs Time in {freq_band[0]}-{freq_band[1]} MHz (Channel {channel})")
+            plt.xlabel("Time (s)")
+            plt.ylabel("Standard Deviation (V)")
+            plt.grid(True, linestyle='--', alpha=0.7)
+            plt.legend(loc='best')
+            plt.tight_layout()
+            plt.savefig('Baseline_202250204.png')
+            plt.show()
+
+    def analyse_mean_amplitude_vs_time(self, axis=1, only_pre_trigger=False):
 
         plt.figure(figsize=(10, 6))
-        plt.plot(event_times, std_list, 'o', label="Standard Deviation")
+        unique_dus = np.unique(self.data.du_ids)
         
-        if fit_sine:
-            # Modèle sinusoïdal pour ajuster les données (périodicité sur 24h).
-            def sine_model(t, A, f, phase, offset):
-                return A * np.sin(2 * np.pi * f * t + phase) + offset
+        for du in unique_dus:
+            mask = self.data.du_ids == du
+            traces_du = self.data.traces[mask]  # forme: (n_events, n_channels, n_samples)
+            n_events = traces_du.shape[0]
+            if n_events == 0:
+                print(f"Aucun événement pour DU {du}.")
+                continue
 
-            A0 = (std_list.max() - std_list.min()) / 2
-            offset0 = std_list.mean()
-            f0 = 1 / 86400  # Périodicité de 24h (~1.16e-5 Hz)
-            phase0 = 0
-            p0 = [A0, f0, phase0, offset0]
-            popt, pcov = curve_fit(sine_model, event_times, std_list, p0=p0)
-            fitted_curve = sine_model(event_times, *popt)
-            plt.plot(event_times, fitted_curve, '-', label="Sine Fit")
-            print("Paramètres du fit: A = {:.3g}, f = {:.3g} Hz, phase = {:.3g}, offset = {:.3g}".format(*popt))
+
+            event_times = self.data.compute_true_time()
+            event_times = event_times[mask] 
+            
+            # Sélection de la portion de trace à analyser
+            if only_pre_trigger:
+                data_to_analyze = traces_du[:, axis, :250]
+            else:
+                data_to_analyze = traces_du[:, axis, :]
+
+            
+            mean_amplitudes = np.mean(data_to_analyze, axis=1) # Calcule la moyenne pour chaque ligne en additionnant les valeurs de la ligne et en divisant par le nombre de colonnes.
+            # Shape : (n_events,)
+            # On trace le résultat : chaque événement est représenté par son trigger time et son amplitude moyenne.
+            plt.plot(event_times, mean_amplitudes, '.', label=f'DU {du}')
         
-        if du is not None:
-            plt.title(f"Galactic Noise Standard Deviation vs Time in {f_low}-{f_high} MHz (Channel {channel}, DU {du})")
-        else:
-            plt.title(f"Galactic Noise Standard Deviation vs Time in {f_low}-{f_high} MHz (Channel {channel})")
-        plt.xlabel("Time (s)")
-        plt.ylabel("Standard Deviation (V)")
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.legend(loc='best')
+        plt.xlabel("Temps de trigger (ns)")
+        plt.ylabel("Amplitude moyenne")
+        plt.title("Amplitude moyenne vs Temps de trigger")
+        plt.legend(loc="best")
+        plt.grid(True, linestyle="--", alpha=0.7)
         plt.tight_layout()
         plt.show()
-        
+
+
+
+    def analyse_std_baseline_vs_time(self, axis=1, only_pre_trigger=False):
+        """
+        Plots the standard deviation of the trace vs time for each Detection Unit (DU) for a chosen axis.
+
+        Parameters:
+        - axis: int, the channel index to analyze (default: 0).
+        - only_pre_trigger: bool, if True, only use the pre-trigger portion of the trace.
+        """
+        plt.figure(figsize=(10, 6))
+        unique_dus = np.unique(self.data.du_ids)
+
+        # Loop over each detection unit
+        for du in unique_dus:
+            mask = self.data.du_ids == du
+            traces_du = self.data.traces[mask]  # shape: (n_events, n_channels, n_samples)
+            n_events = traces_du.shape[0]
+            if n_events == 0:
+                print(f"No events for DU {du}. Skipping.")
+                continue
+            
+            event_times = self.data.compute_true_time()
+            event_times = event_times[mask] 
+
+            if only_pre_trigger:
+                data_to_analyze = traces_du[:, 0, :250]
+                npts = 250
+            else:
+                data_to_analyze = np.asarray(traces_du[:, axis, :], dtype=np.float64)
+
+
+
+            std_trace = np.std(data_to_analyze, axis=1) # std of each event compare to the mean amplitude of the event
+
+
+            plt.plot(event_times, std_trace, '.', label=f'DU {du}')
+
+        plt.xlabel("Time (ns)")
+        plt.ylabel("Standard Deviation")
+        plt.title(f"Standard Deviation of Trace vs Time (Axis {axis}{', Pre-trigger' if only_pre_trigger else ''})")
+        plt.legend(loc='best')
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        plt.show()
+    
+
 
     def histo_amplitude_all_event_norm(self, channels=None, amplitude_type='hilbert', bins=50, hist_range=None):
         """
@@ -390,7 +500,7 @@ class SpectrumAnalyzer:
                 amplitudes = np.ptp(signal_data, axis=1)
             elif amplitude_type == 'hilbert':
                 analytic_signal = hilbert(signal_data, axis=1)
-                amplitudes = np.mean(np.abs(analytic_signal), axis=1)
+                amplitudes = np.mean(np.abs(analytic_signal), axis=1) # max ? 
                 if ch == 1:
                     envelope_channel_fltX = np.abs(analytic_signal)
                     trace_channel_fltX = signal_data
@@ -405,7 +515,7 @@ class SpectrumAnalyzer:
             # Store normalized amplitudes for global range computation
             norm_data[ch] = norm_amplitudes
             
-            # Optionally store in amplitude_values (if needed elsewhere)
+            
             if ch > 0:
                 amplitude_values[:, ch-1] = norm_amplitudes
             else:
@@ -578,7 +688,7 @@ class SpectrumAnalyzer:
         channels_order = [0, 1, 2, 3]
         for i, ch in enumerate(channels_order):
             values = [std_amplitudes[du].get(channel_names[ch], np.nan) for du in unique_dus]
-            ax.bar(x + (i - 1.5) * bar_width, values, width=bar_width, color=colors[ch],
+            ax.bar(x + (i - 2) * bar_width, values, width=bar_width, color=colors[ch],
                    label=channel_names[ch])
             
         ax.set_xlabel("Detection Unit (DU)")
@@ -603,6 +713,10 @@ class SpectrumAnalyzer:
 
         return dus_feb
 
+
+
+
+# Chelou a reprendre 
 
     def amplitude_map_X(self, amplitude_type='hilbert'):
         """
@@ -877,3 +991,5 @@ class SpectrumAnalyzer:
         ax.set_aspect('equal', adjustable='box')
         plt.tight_layout()
         plt.show()
+
+        

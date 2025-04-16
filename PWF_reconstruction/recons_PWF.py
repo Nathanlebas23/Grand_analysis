@@ -115,11 +115,16 @@ def PWF_semianalytical(Xants, tants, verbose=False, c=c_light, n=n_atm, sigma=No
     if (np.abs(beta[0] / nbeta) < 1e-14):
         if (verbose):
             print("Degenerate case")
+        # print(len(tants))
+
         mu = -d[0]
         c_ = np.zeros(3)
         c_[1] = beta[1] / (d[1] + mu)
         c_[2] = beta[2] / (d[2] + mu)
         si = np.sign(np.dot(W[:, 0], np.array([0, 0, 1.])))
+        if  c_[1]**2 + c_[2]**2 >1:
+            # print(c_[1]**2 + c_[2]**2 )
+            pass
         c_[0] = -si * np.sqrt(1 - c_[1]**2 - c_[2]**2)
         k_opt = np.dot(W, c_)
 
