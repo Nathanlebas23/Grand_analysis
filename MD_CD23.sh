@@ -1,6 +1,6 @@
 #!/bin/sh
 
-#SBATCH --job-name=MD_202250402_job    # Nom du job
+#SBATCH --job-name=MD_CD23_job    # Nom du job
 #SBATCH --output=MD_test_%j.log   # Standard output et error log
 
 #SBATCH --partition=htc               # Choix de partition (htc par défaut)
@@ -11,7 +11,6 @@
 
 #SBATCH --mail-user=nlebas@lpnhe.in2p3.fr          # Où envoyer l'e-mail
 #SBATCH --mail-type=END,FAIL          # Événements déclencheurs (NONE, BEGIN, END, FAIL, ALL)
-
 #SBATCH --licenses=sps                # Déclaration des ressources de stockage et/ou logicielles
 
 

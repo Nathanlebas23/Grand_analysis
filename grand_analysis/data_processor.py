@@ -37,7 +37,6 @@ class DataProcessor:
             print(f"Loading file:", fname)
 
             for i in range(int(n_entries)) :
-            
                 # Retrieve ADC and raw voltage data for the current event.
                 root_file.tadc.get_entry(i)
                 root_file.trawvoltage.get_entry(i)
@@ -57,9 +56,9 @@ class DataProcessor:
                 # Determine the number of triggered detection units for the event.
                 multiplicity = len(root_file.tadc.du_id) # Give the DUs triggered in the event
                 self.mult.append(multiplicity)
-                
                 # Pour chaque DU activée dans l'événement, on enregistre toutes les informations.
                 for j in range(multiplicity):
+                    
                     self.multiplicities.append(multiplicity)
                     self.trigger_times.append(root_file.tadc.du_seconds[j])
                     self.trigger_nanos.append(root_file.tadc.du_nanoseconds[j])
@@ -87,11 +86,39 @@ class DataProcessor:
         self.trigger_pattern_ch = np.array(self.trigger_pattern_ch)
 
 
+
+    def verify(self, print_every: int = 100):
+        """
+        Affiche des informations toutes les `print_every` itérations pour vérifier les données.
+
+        :param print_every: fréquence d'affichage (par défaut toutes les 100 itérations)
+        """
+        # Calculer une seule fois le tableau des temps en ns et le temps relatif en s
+        true_times = self.compute_true_time()                    # tableau en nanosecondes
+        t0 = np.min(true_times)                                 # référence
+        time_s = (true_times - t0) / 1e9                        # passage en secondes
+
+        n = len(self.du_ids)
+        
+        if not (n == len(true_times) == len(self.multiplicities)):
+            raise ValueError(
+                "Incohérence de longueurs : du_ids, true_times et multiplicities doivent être identiques."
+            )
+
+        for i in range(n):
+            print(
+                f"Itération {i:>6d} | DU ID = {self.du_ids[i]} | "
+                f"Temps = {true_times[i]} ns ({time_s[i]:.4f} s) | "
+                f"Multiplicité = {self.multiplicities[i]} | "
+                f"GPS = (lat={self.du_lat[i]:.2f}, lon={self.du_long[i]:.2f}, alt={self.du_alt[i]:.2f} m)"
+            )
+
+
     def compute_true_time(self):
         """
         Compute the true time (in nanoseconds) for each event.
         """
-        return (self.trigger_times * 1e9 + self.trigger_nanos) - min(self.trigger_times)
+        return (self.trigger_times * 1e9 + self.trigger_nanos)
 
     def get_unique_du(self):
         """

@@ -318,19 +318,18 @@ class Visualizer:
 
 
     def get_causal_event(self):
-       
-        times_ns = (self.data.compute_true_time() - min(self.data.compute_true_time())) / 1e9
-        event_indices = self.get_event_indices() 
+    
+        times_ns = (self.data.compute_true_time() - min(self.data.compute_true_time())) / 1e9 # REgarder dif ici
+        event_indices = self.get_event_indices()
         distance_matrix, du_to_index = self.build_distance_matrix()
 
-        all_causal_events = []  
-        all_causal_times = []   
+        all_problematic_indices = [] 
         solo = 0  
 
-    
-        for start, end in event_indices:
+        for event_id, (start, end) in enumerate(event_indices):
             if (end - start) < 2:
                 solo += 1
+                all_problematic_indices.append([])
                 continue
 
             times_event = times_ns[start:end]
@@ -340,35 +339,31 @@ class Visualizer:
             times_sorted = times_event[sort_idx]
             du_sorted = du_event[sort_idx]
 
-            du_indices = np.array([du_to_index[du] for du in du_sorted])
             M = len(times_sorted)
+            # print(f"Event {event_id} - Nombre de triggers (M):", M)
 
-            causal_indices = [0]
+            event_problematic = []  
 
-            for i in range(1, M):
-                for j in range(0, i):
-                    d = distance_matrix[du_indices[i], du_indices[j]]
-                    propagation_delay = d / self.c
-                    deltaT = times_sorted[i] - times_sorted[j] - propagation_delay
-                    print(f'couple ;', (i,j), 'deltaT :', deltaT)
+            for i in range(1, M - 1):
+                current_du = du_sorted[i]
+                next_du = du_sorted[i + 1]
+
+                current_index = du_to_index[current_du]
+                next_index = du_to_index[next_du]
+                d = distance_matrix[current_index, next_index]
+
+                propagation_delay = d / self.c
+
+                deltaT = times_sorted[i] - times_sorted[i + 1] - propagation_delay
+                # print(f"Event {event_id}, paire ({i}, {i+1}) - deltaT: {deltaT}")
+
                 if deltaT >= 0:
-                    # Tester le Chi² avec i ou j 
-                    trigger_causal = True
+                    event_problematic.append((event_id,i, i + 1))
+                    print(f"Event {event_id}, paire ({i}, {i+1}) - deltaT: {deltaT} (problematic)") 
+            all_problematic_indices.append(event_problematic)
+        print(solo)
+        return all_problematic_indices
 
-                    # break  # On n'a pas besoin de tester les autres triggers antérieurs
-            if trigger_causal:
-                causal_indices.append(i)
-            else:
-                print("Trigger non causal retiré :", du_sorted[i], "à temps", times_sorted[i])
-
-       
-        event_causal_du = du_sorted[causal_indices]
-        event_causal_times = times_sorted[causal_indices]
-
-        all_causal_events.append(event_causal_du)
-        all_causal_times.append(event_causal_times)
-    
-        return all_causal_events, all_causal_times
 
 
         
@@ -415,74 +410,208 @@ class Visualizer:
         for m in self.data.mult:
             event_indices.append((start, start + m))
             start += m
+        print(event_indices, 'event indices')
         return event_indices
 
 
-
-    def plot_deltaT_histogram(self, bins=50):
-        times_ns = (self.data.compute_true_time() - min(self.data.compute_true_time())) / 1e9
+    def get_deltaT(self, bins=100):
+        times_s = (self.data.compute_true_time() - min(self.data.compute_true_time())) / 1e9
         event_indices = self.get_event_indices() 
         distance_matrix, du_to_index = self.build_distance_matrix()
         all_deltaT = []
         solo = 0
-        duplicatate = 0
+        duplicate = 0
         duplicates_per_DU = {}
-        
+        duplicate_deltaT_by_du = {}
+        duplicate_times_per_du = {}
+        all_duplicate_times = []
+
         for start, end in event_indices:
             if (end - start) < 2:
                 solo += 1
                 continue
 
-
-
-            times_event = times_ns[start:end]
+            times_event = times_s[start:end]
             du_event = self.data.du_ids[start:end]
-            
             
             sort_idx = np.argsort(times_event)
             times_sorted = times_event[sort_idx]
-            du_sorted = du_event[sort_idx]
+            # print(len(times_sorted), "times sorted")
+            du_sorted = du_event[sort_idx]   
             
             
             du_indices = np.array([du_to_index[du] for du in du_sorted]) # pour traiter la matrice de distance ex: 1044:0, 1087:1
-            
+            # print(du_indices)
             unique_du, counts_du = np.unique(du_sorted, return_counts=True)
             for du, count in zip(unique_du, counts_du):
                 if count >= 2:
-                    duplicatate += 1
+                    duplicate += 1
                     duplicates_per_DU[du] = duplicates_per_DU.get(du, 0) + (count - 1)
 
 
+
             M = len(times_sorted)
+            # print(f"Nombre de triggers (M):", M)
+            
             dt_matrix = times_sorted[:, None] - times_sorted[None, :]
             
 
             distances = distance_matrix[du_indices[:, None], du_indices[None, :]]
             
+            
             propagation_delays = distances / self.c
+            # print("propagation delays", propagation_delays)
+
             deltaT_matrix = dt_matrix - propagation_delays
             
-            lower_triangle_indices = np.tril_indices(M, k=-1) 
+            # lower_triangle_indices = np.tril_indices(M, k=-1) 
+            # event_deltaT = deltaT_matrix[lower_triangle_indices]
 
-            event_deltaT = deltaT_matrix[lower_triangle_indices]
-            print("event deltaT", event_deltaT)
+            sub_diag = np.diag(deltaT_matrix, k=-1)
+            # print("event deltaT", sub_diag)
+            
+            all_deltaT.append(sub_diag)
 
-            all_deltaT.append(event_deltaT)
-        
+
+            for i in range(1, M):
+                if du_sorted[i] == du_sorted[i-1]:
+                    du_val = du_sorted[i]
+                    du_time = times_sorted[i]
+                    # print("du_val", du_val)  
+                    dt_val = sub_diag[i-1]
+                    # print("dt_val", dt_val)
+                    duplicate_times_per_du[du_val] = [] 
+                    if du_val in duplicate_deltaT_by_du:
+                        duplicate_deltaT_by_du[du_val].append(dt_val)
+                    else:
+                        duplicate_deltaT_by_du[du_val] = [dt_val]
+                    
+                    duplicate_times_per_du[du_val].append(du_time)
+                    all_duplicate_times.append(du_time)
+
+                    
+        # print("all deltaT", all_deltaT)
         if all_deltaT:
             all_deltaT = np.concatenate(all_deltaT)
         else:
             all_deltaT = np.array([])
-        
-        print(solo, "events with only one trigger.")
-        print(duplicatate, "duplicate triggers detected across events.")
-        print("Duplicates per DU:", duplicates_per_DU)
-        
-        plt.figure()
-        plt.hist(all_deltaT, bins=bins, edgecolor='black')
-        plt.xlabel("ΔT (s) = T_i - T_j - d_{ij}/c (s)")
-        plt.ylabel("Numbre of counts")
-        plt.title("Histogram of ΔT")
-        plt.grid(True)
-        plt.show()
 
+        du_list = sorted(duplicate_deltaT_by_du.keys())
+        data_list = [duplicate_deltaT_by_du[du] for du in du_list]
+
+
+        
+        # print(du_to_index)
+        # print(distance_matrix)
+        # print(solo, "events with only one trigger.")
+        # print(duplicate, "duplicate triggers detected across events.")
+        # print("Duplicates per DU:", duplicates_per_DU)
+        # print(len(all_deltaT), "all deltaT")
+
+        return all_deltaT, data_list, du_list, duplicate_deltaT_by_du, duplicate_times_per_du, all_duplicate_times, duplicate
+
+
+    def plot_deltaT_histogram(self, bins=50):
+        
+        all_deltaT, data_list, du_list, duplicate_deltaT_by_du, duplicate_times_per_du, all_duplicate_times, duplicate = self.get_deltaT(bins=bins)
+        # print(duplicate_deltaT_by_du, "duplicate deltaT by DU")
+
+        du_ids, counts = np.unique(self.data.du_ids, return_counts=True)
+        total_counts = dict(zip(du_ids, counts))
+
+        plt.figure(figsize=(10, 6))
+
+        global_min = np.min(all_deltaT)
+        global_max = np.max(all_deltaT)
+        hist_range = (global_min, global_max)
+
+        plt.hist(all_deltaT, bins=bins, range=hist_range, color='gray', alpha=0.5, label="All events", edgecolor='black')
+        
+        labels = []
+        for du in du_list:
+            dup = len(duplicate_deltaT_by_du.get(du, []))
+            total = total_counts.get(du, 1)
+            pct_du = dup / total * 100
+            pct_tot = dup / len(self.data.du_ids) * 100
+    
+            labels.append(f"DU {du}: {dup}/{total} ({pct_du:.1f}% DU, {pct_tot:.1f}% tot)")
+
+        pct_tot_dup = duplicate / len(self.data.du_ids)  * 100   
+        plt.hist(data_list, bins=bins, range=hist_range, stacked=True, 
+                label=labels)
+
+        plt.xlabel("ΔT (s)")
+        plt.ylabel("Number of duplicate")
+        plt.title(f"Histogram all ΔT and per duplicate DUs\n - Number of events: {len(self.data.du_ids)} -\n - Number of duplicates: {duplicate} ({pct_tot_dup:.1f}% of the total) - ")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout() 
+        plt.savefig("deltaT_histogram.png")
+        plt.show()
+        
+
+        plt.figure(figsize=(10, 6))
+
+        # Concaténer toutes les valeurs ΔT issues des doublons afin de calculer le min et max global
+        all_duplicate_values = np.concatenate(list(duplicate_deltaT_by_du.values()))
+        global_min_duplicate = np.min(all_duplicate_values)
+        global_max_duplicate = np.max(all_duplicate_values)
+        hist_range_duplicate = (global_min_duplicate, global_max_duplicate)
+
+        for du in du_list:
+            plt.hist(duplicate_deltaT_by_du[du], bins=bins, range=hist_range_duplicate,
+                    alpha=0.5, label=f"DU {du}", edgecolor='black')
+
+        plt.xlabel("ΔT (s)")
+        plt.ylabel("Number of duplicates")
+        plt.title("Histogram of ΔT for the duplicates per DU")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig("duplicate_deltaT.png")
+        plt.show()
+        
+
+        all_trigger_times = (self.data.compute_true_time() - np.min(self.data.compute_true_time())) / 1e9
+        all_trigger_times = np.array(all_trigger_times)
+
+        all_duplicate_times = np.array(all_duplicate_times)
+        global_min = min(all_trigger_times.min(), all_duplicate_times.min())
+        global_max = max(all_trigger_times.max(), all_duplicate_times.max())
+        bins_time = np.linspace(global_min, global_max, bins+1)
+
+
+
+        bin_width = bins_time[1] - bins_time[0]
+
+        plt.figure(figsize=(10, 6))
+
+        
+        plt.hist(
+            all_trigger_times,
+            bins=bins_time,
+            histtype='stepfilled',
+            linewidth=2,
+            alpha=0.5,
+            label="All triggers",
+            weights=np.ones_like(all_trigger_times) / bin_width,
+            edgecolor='black'
+        )
+
+        
+        plt.hist(
+            all_duplicate_times,
+            bins=bins_time,
+            histtype='stepfilled',
+            linewidth=2,
+            label="All duplicates",
+            weights=np.ones_like(all_duplicate_times) / bin_width
+        )
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Rate of duplicates DUs (Hz)")                     
+        plt.title("Differential number of duplicates vs trigger time")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig("duplicate_time.png")
+        plt.show()
+        

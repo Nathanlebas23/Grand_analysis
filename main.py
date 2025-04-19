@@ -24,6 +24,7 @@ from grand_analysis.visualizer import Visualizer
 from grand_analysis.spectrum_analyzer import SpectrumAnalyzer
 from grand_analysis.trigger_analyzer import TriggerAnalyzer
 from grand_analysis.reconstructor import Reconstructor
+from grand_analysis.DeltaT_Analyzer import DeltaTAnalyzer
 import time
 import numpy as np
 import time
@@ -56,45 +57,56 @@ def main():
     # Directory where the file list (text file containing a list of data file paths) is located.
     file_list_dir = "/sps/grand/nlebas/grand/Grand_analysis/"
     
-    # Directory containing the raw data files.
-    data_files_dir = "/sps/grand/data/gp80/GrandRoot/2025/02/"
+    # # Directory containing the raw data files.
+    data_files_dir = "/sps/grand/data/gp80/GrandRoot/2025/03/"
     
     # Optionally, you can load a list of data file paths from a text file.
     # (The following code is commented out; adjust as needed.)
-    #
-    # file_list_path = os.path.join(file_list_dir, "data_test.txt")
+
+    
+
+    # file_list_path = os.path.join(file_list_dir, "data_2303.txt")
     # with open(file_list_path, "r") as f:
     #     sorted_file_list = [
     #         os.path.normpath(os.path.join(data_files_dir, line.strip()))
     #         for line in f if line.strip()
     #     ]
-    #
+    
     # valid_file_list = [fname for fname in sorted_file_list if os.path.exists(fname)]
     # if not valid_file_list:
     #     raise RuntimeError("No valid data files to process!")
     
+    # task_id    = int(sys.argv[1])                                    
+    # n_tasks    = int(os.environ.get("SLURM_ARRAY_TASK_COUNT", "1"))
+    # chunks     = np.array_split(valid_file_list, n_tasks)
+    # my_files   = chunks[task_id].tolist()
+    # print(f"[TASK {task_id}/{n_tasks}] Processing {len(my_files)} files")
+
+
     # For testing purposes, we use a single data file.
     test_file = [
-        '/home/nlebas/Documents/LPNHE/GRAND/Local_Data/data_files/GP80_20250323_204636_RUN10074_CD_20dB_GP43-14DUs-ChY-Y2FLOAT-X2Z-CD-10000-514.root'
+        '/home/nlebas/Documents/LPNHE/GRAND/Local_Data/data_files/GP80_20250323_000113_RUN10074_CD_20dB_GP43-14DUs-ChY-Y2FLOAT-X2Z-CD-10000-389.root'
     ]
     
     # =============================================================================
     # 2. Process the Data
     # =============================================================================
     # Create an instance of DataProcessor using the test file(s) and process the data.
-    processor = DataProcessor(file_list=test_file)
+    processor = DataProcessor(file_list= test_file)
     processor.process_files()
-    
+    # processor.verify(print_every=100)  
+
+
     # =============================================================================
     # 3. Visualize Data Aspects
     # =============================================================================
     # Create a Visualizer with a time resolution of 2 ns.
     viz = Visualizer(processor, dt=2e-9)
-    
+    # viz.get_event_indices()
     # Uncomment the following lines to perform various visualizations:
-    # viz.plot_geolocation()                # Plot the geographic locations of detectors.
-    # # viz.build_distance_matrix()           # Build and display a distance matrix between detectors.
-    # # viz.visualize_event(target_du=1046, evtid=12, channels=[0, 1])
+    viz.plot_geolocation()                # Plot the geographic locations of detectors.
+    # viz.build_distance_matrix()           # Build and display a distance matrix between detectors.
+    # viz.visualize_event(target_du=1046, evtid=12, channels=[0, 1])
     # viz.plot_du_histogram()               # Histogram of Digital Units.
     # viz.plot_du_histogram_duplicate()               # Histogram of Digital Units.
     # viz.plot_time_trigger()
@@ -103,14 +115,15 @@ def main():
     # viz.plot_multiplicity_histogram()     # Histogram of event multiplicities.
     # viz.plot_trigger_vs_time_comparison() # Compare trigger times against time.
     # viz.plot_deltaT_histogram(bins=100) # Histogram of time differences.
-    viz.get_causal_event()
+    # viz.get_deltaT(bins=100)
+    # viz.get_causal_event()
     
     # =============================================================================
     # 4. Spectrum Analysis
     # =============================================================================
     # Instantiate the SpectrumAnalyzer for frequency analysis.
-    spec = SpectrumAnalyzer(processor, viz, dt=2e-9) 
-    # Uncomment the following lines for spectrum analysis:
+    # spec = SpectrumAnalyzer(processor, viz, dt=2e-9) 
+    # # Uncomment the following lines for spectrum analysis:
     # spec.visualize_PSD(channels=[1], xlim=(0, 250), min_spectra=100, apply_notch=False, 
     #                    only_pre_trigger=False, f_sample=500e6, kadc=1.8/16384, R=50)
     # spec.analyze_baseline_vs_time(channel=[1], freq_band=(0, 250), du=None, apply_notch=False, 
@@ -130,7 +143,7 @@ def main():
     # =============================================================================
     # Create a Reconstructor instance. Set rec_model to 'PWF' or 'SWF' and event_index to None
     # to process all events.
-    recon = Reconstructor(processor, viz, rec_model='PWF', nb_min_antennas=4, event_index=None)
+    # recon = Reconstructor(processor, viz, rec_model='PWF', nb_min_antennas=4, event_index=None)
     
     # Uncomment one of the following options:
     # results = recon.reconstruct()  # Process and return reconstruction results for all events.
@@ -144,18 +157,36 @@ def main():
     # 6. Analyze Trigger Data
     # =============================================================================
     # Instantiate the TriggerAnalyzer for trigger-related analysis.
-    trigpat = TriggerAnalyzer(processor, recon, viz, dt=2e-9)
+    # trigpat = TriggerAnalyzer(processor, recon, viz, dt=2e-9)
     
-    # Uncomment the desired trigger analysis functions:
+    # # Uncomment the desired trigger analysis functions:
     # trigpat.plot_histograms_trigger_counts()
     # trigpat.plot_trigger_rate_map()
     # trigpat.trigger_vs_time(bin_width=5)
     # trigpat.trigger_count_vs_time(bin_width=2)
     # trigpat.analyze_trigger_delays(event_index=None)  # Use None to analyze and animate all events.
-    # trigpat.histo_chi2()
+    # # trigpat.histo_chi2()
     
+
+
     # =============================================================================
-    # 7. Report Execution Time
+    # 7. DeltaT Analysis
+    # =============================================================================
+
+    # ana = DeltaTAnalyzer(processor, viz, dt=2e-9)
+    #     # Charge votre Parquet et trace les histogrammes
+    # ana = DeltaTAnalyzer('all_events_byfilename.parquet')
+    # ana.verify()
+    # # ana.plot_deltaT_zoom(bins=1000, window_ns=3)
+    # # ana.plot_duplicate_rate_vs_distance()
+    # # ana.plot_mse_duplicates()
+    # ana.plot_duplicate_histogram(bins=100)
+    # ana.visualize_event(1082, 274964, channels=[1, 2], f_sample=None)
+    # ana.plot_deltaT_histogram(bins=1000)
+
+
+    # =============================================================================
+    # 8. Report Execution Time
     # =============================================================================
     end_time = time.time()
     print("Execution time: {:.3f} seconds".format(end_time - start_time))
