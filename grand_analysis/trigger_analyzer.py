@@ -17,10 +17,10 @@ class TriggerAnalyzer:
       - Compute and plot the trigger rate (in Hz) total and per DU.
       
     It assumes that the data_processor object (accessible via self.data) provides:
-      - self.data.du_ids: array of DU IDs per event.
-      - self.data.trigger_pattern_ch: array of shape (n_events, n_channels) with boolean trigger data.
-      - self.data.trigger_times: array of trigger times (in seconds or other unit).
-      - self.data.trigger_nanos: array of trigger nanoseconds.
+      - self.data._du_ids: array of DU IDs per event.
+      - self.data._trigger_pattern_ch: array of shape (n_events, n_channels) with boolean trigger data.
+      - self.data._trigger_secs: array of trigger times (in seconds or other unit).
+      - self.data._trigger_nanos: array of trigger nanoseconds.
     """
     def __init__(self, data_processor, reconstructor,  visualizer,  dt=2e-9):
         """
@@ -47,15 +47,15 @@ class TriggerAnalyzer:
           - n_dus: number of unique DUs.
           - trigger_counts: 2D array of shape (n_dus, 3) with counts for [X only, Y only, X & Y].
         """
-        unique_du_ids = np.unique(self.data.du_ids)
+        unique_du_ids = np.unique(self.data._du_ids)
         n_dus = len(unique_du_ids)
-        n_event = len(self.data.du_ids)
+        n_event = len(self.data._du_ids)
         # 3 bins : X only, Y only, X & Y
         trigger_counts = np.zeros((n_dus, 3), dtype=int)
         
         for i, du in enumerate(unique_du_ids):
-            mask = self.data.du_ids == du
-            tp = self.data.trigger_pattern_ch[mask]  # shape: (n_events_for_du, n_channels)
+            mask = self.data._du_ids == du
+            tp = self.data._trigger_pattern_ch[mask]  # shape: (n_events_for_du, n_channels)
             x_only = np.sum(tp[:, 1] & ~tp[:, 2])
             y_only = np.sum(tp[:, 2] & ~tp[:, 1])
             both   = np.sum(tp[:, 1] & tp[:, 2])
@@ -100,7 +100,7 @@ class TriggerAnalyzer:
         using the global duration of the dataset.
         
         The event times are computed using:
-            true_time = self.data.trigger_times * 1e9 + self.data.trigger_nanos
+            true_time = self.data._trigger_secs * 1e9 + self.data._trigger_nanos
         which are then converted to seconds.
         
         Returns:
@@ -109,21 +109,21 @@ class TriggerAnalyzer:
                               where each DU's rate is computed as (number of triggers for that DU) / (global duration).
         """
         # Calculer le temps vrai (en ns) pour chaque événement, puis le convertir en secondes.
-        event_times_ns = self.data.trigger_times * 1e9 + self.data.trigger_nanos
+        event_times_ns = self.data._trigger_secs * 1e9 + self.data._trigger_nanos
         event_times_s = event_times_ns / 1e9
         
         # Calculer la durée globale de la prise de données (en secondes).
         duration_total = event_times_s.max() - event_times_s.min()
         
         # Calcul du taux global : nombre total de déclenchements / durée totale.
-        total_triggers = len(self.data.du_ids)
+        total_triggers = len(self.data._du_ids)
         total_rate = total_triggers / duration_total if duration_total > 0 else np.nan
         
         # Calcul du taux par DU en utilisant la même durée globale.
-        unique_du_ids = np.unique(self.data.du_ids)
+        unique_du_ids = np.unique(self.data._du_ids)
         per_du_rate = {}
         for du in unique_du_ids:
-            mask = self.data.du_ids == du
+            mask = self.data._du_ids == du
             count = np.sum(mask)
             rate = count / duration_total if duration_total > 0 else np.nan
             per_du_rate[du] = rate
@@ -223,10 +223,10 @@ class TriggerAnalyzer:
 
     def trigger_vs_time(self, bin_width=10):
         
-        event_times_ns = self.data.trigger_times * 1e9 + self.data.trigger_nanos
+        event_times_ns = self.data._trigger_secs * 1e9 + self.data._trigger_nanos
         event_times = event_times_ns / 1e9  
         
-        unique_du_ids = np.unique(self.data.du_ids)
+        unique_du_ids = np.unique(self.data._du_ids)
         
         t_min = event_times.min()
         t_max = event_times.max()
@@ -236,7 +236,7 @@ class TriggerAnalyzer:
         plt.figure(figsize=(12, 8))
         
         for du in unique_du_ids:
-            mask = self.data.du_ids == du
+            mask = self.data._du_ids == du
             du_times = event_times[mask]
             if len(du_times) == 0:
                 continue
@@ -262,10 +262,10 @@ class TriggerAnalyzer:
         """
         # Compute event times in seconds by combining trigger_times (assumed in seconds)
         # with trigger_nanos (assumed in nanoseconds).
-        event_times = self.data.trigger_times + self.data.trigger_nanos / 1e9
+        event_times = self.data._trigger_secs + self.data._trigger_nanos / 1e9
 
         # Get unique DU IDs from the data.
-        unique_du_ids = np.unique(self.data.du_ids)
+        unique_du_ids = np.unique(self.data._du_ids)
 
         # Determine the time range and create bins.
         t_min, t_max = event_times.min(), event_times.max()
@@ -277,7 +277,7 @@ class TriggerAnalyzer:
         
         # Loop over each DU and calculate the cumulative counts.
         for du in unique_du_ids:
-            mask = self.data.du_ids == du
+            mask = self.data._du_ids == du
             du_times = event_times[mask]
             if len(du_times) == 0:
                 continue
@@ -334,7 +334,7 @@ class TriggerAnalyzer:
                     du_coords = du_coords[sort_idx]
                     if hasattr(self.data, 'du_ids'):
                         # Extract the DU IDs for the current event and sort them accordingly.
-                        du_ids_event = np.array(self.data.du_ids[start:end])[sort_idx]
+                        du_ids_event = np.array(self.data._du_ids[start:end])[sort_idx]
 
                 # Reconstruct the event using PWF to get theta and phi.
                 result = self.reconstructor.reconstruct(event_index=idx)
@@ -384,7 +384,7 @@ class TriggerAnalyzer:
                     ax1.set_ylabel(r"$\Delta t_{\rm rec}$ [ns]")
                     ax1.set_title(f"Plane Wave Rec. Event n°{idx} (χ² = {chi2:.2f})")
                     if hasattr(self.data, 'du_ids'):
-                        du_ids_event = np.array(self.data.du_ids[start:end])
+                        du_ids_event = np.array(self.data._du_ids[start:end])
                         for j in range(len(t_exp)):
                             ax1.text(t_exp[j] + 100, t_rec[j], str(du_ids_event[j]), fontsize=12)
                     ax1.grid(True)
@@ -396,7 +396,7 @@ class TriggerAnalyzer:
                     ax2.set_ylabel(r"$\Delta t_{\rm exp} - \Delta t_{\rm rec}$ [ns]")
                     if hasattr(self.data, 'du_ids'):
                         for j in range(len(t_exp)):
-                            ax2.text(t_exp[j] + 10, residuals[j], str(np.array(self.data.du_ids)[start+j]), fontsize=12)
+                            ax2.text(t_exp[j] + 10, residuals[j], str(np.array(self.data._du_ids)[start+j]), fontsize=12)
                     ax2.grid(True)
                     fig.tight_layout()
                     plt.draw()         # update the current figure
@@ -433,7 +433,7 @@ class TriggerAnalyzer:
 
         if hasattr(self.data, 'du_ids'):
             # Extract the DU IDs for the current event and sort them accordingly.
-            du_ids_event = np.array(self.data.du_ids[start:end])[sort_idx]
+            du_ids_event = np.array(self.data._du_ids[start:end])[sort_idx]
             
 
         if t_triggers.size == 0:
@@ -491,7 +491,7 @@ class TriggerAnalyzer:
             plt.title(f"Plane Wave Rec. Event n°{event_index} of the file")
             # Annotate each point with DU ID if available.
             if hasattr(self.data, 'du_ids'):
-                du_ids_event = self.data.du_ids[start:end]
+                du_ids_event = self.data._du_ids[start:end]
                 for j in range(len(t_exp)):
                     plt.text(t_exp[j] + 100, t_rec[j], str(du_ids_event[j]), fontsize=12)
             plt.grid(True)
@@ -503,7 +503,7 @@ class TriggerAnalyzer:
             plt.ylabel(r"$\Delta t_{\rm exp} - \Delta t_{\rm rec}$ [ns]")
             if hasattr(self.data, 'du_ids'):
                 for j in range(len(t_exp)):
-                    plt.text(t_exp[j] + 10, residuals[j], str(self.data.du_ids[start + j]), fontsize=12)
+                    plt.text(t_exp[j] + 10, residuals[j], str(self.data._du_ids[start + j]), fontsize=12)
             plt.grid(True)
             plt.tight_layout()
             plt.show()

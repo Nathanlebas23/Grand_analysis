@@ -42,9 +42,9 @@ class DataQualityCheck :
         if index >= len(event_indices):
             raise IndexError("Event index out of range.")
         start, end = event_indices[index]
-        event_lat = self.data.du_lat[start:end]
-        event_lon = self.data.du_long[start:end]
-        event_alt = self.data.du_alt[start:end]
+        event_lat = self.data._du_lat[start:end]
+        event_lon = self.data._du_long[start:end]
+        event_alt = self.data._du_alt[start:end]
         daq = Geodetic(latitude=40.99746387, longitude=93.94868871, height=1215)
         
         event_geo = Geodetic(latitude=event_lat, longitude=event_lon, height=event_alt)
@@ -64,9 +64,9 @@ class DataQualityCheck :
         event_indices = self.get_event_indices()
         all_positions = []
         for start, end in event_indices:
-            event_lat = self.data.du_lat[start:end]
-            event_lon = self.data.du_long[start:end]
-            event_alt = self.data.du_alt[start:end]
+            event_lat = self.data._du_lat[start:end]
+            event_lon = self.data._du_long[start:end]
+            event_alt = self.data._du_alt[start:end]
             event_positions = []
             for j in range(len(event_lat)):
                 du_geo = Geodetic(
@@ -94,7 +94,7 @@ class DataQualityCheck :
         if index >= len(event_indices):
             raise IndexError("Event index out of range.")
         start, end = event_indices[index]
-        true_times = self.data.trigger_times - np.min(self.data.trigger_times) + self.data.trigger_nanos * 1e-9
+        true_times = self.data._trigger_secs - np.min(self.data._trigger_secs) + self.data._trigger_nanos * 1e-9
         event_times = np.array(true_times[start:end])
         event_times -= np.mean(event_times)
         return event_times

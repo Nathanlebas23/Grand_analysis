@@ -17,15 +17,15 @@ class Visualizer:
         """
         Plot the geolocation of the detection units using their GPS data.
         """
-        unique_du, idx = np.unique(self.data.du_ids, return_index=True)
+        unique_du, idx = np.unique(self.data._du_ids, return_index=True)
         
         
         # Define the center station (example coordinates). 
         daq   = Geodetic(latitude=40.99434, longitude=93.94177, height=1262) 
         dus_feb = Geodetic(
-            latitude=self.data.du_lat[idx],
-            longitude=self.data.du_long[idx],
-            height=self.data.du_alt[idx]
+            latitude=self.data._du_lat[idx],
+            longitude=self.data._du_long[idx],
+            height=self.data._du_alt[idx]
         )
         dus_feb = GRANDCS(dus_feb, obstime="2024-09-15", location=daq)
         
@@ -42,14 +42,14 @@ class Visualizer:
 
     def get_geolocation(self):
 
-        unique_du, idx = np.unique(self.data.du_ids, return_index=True)
+        unique_du, idx = np.unique(self.data._du_ids, return_index=True)
         
         # Define the center station (example coordinates). /!\ Change this to the actual DAQ coordinate to correspond to the data !
         daq = Geodetic(latitude=40.99746387, longitude=93.94868871, height=1215)
         dus_feb = Geodetic(
-            latitude=self.data.du_lat[idx],
-            longitude=self.data.du_long[idx],
-            height=self.data.du_alt[idx]
+            latitude=self.data._du_lat[idx],
+            longitude=self.data._du_long[idx],
+            height=self.data._du_alt[idx]
         )
         dus_feb = GRANDCS(dus_feb, obstime="2024-09-15", location=daq)
 
@@ -76,9 +76,9 @@ class Visualizer:
             f_sample = 1. / self.dt
 
         # Création du masque pour sélectionner les événements du DU cible.
-        dumask = self.data.du_ids == target_du
+        dumask = self.data._du_ids == target_du
         # Extraction des traces pour ce DU.
-        traces_du = self.data.traces[dumask]  # shape: (n_events, n_channels, n_points)
+        traces_du = self.data._traces[dumask]  # shape: (n_events, n_channels, n_points)
 
         # Vérifier que des événements existent pour ce DU.
         if traces_du.shape[0] == 0:
@@ -127,9 +127,9 @@ class Visualizer:
         Affiche un histogramme horizontal montrant le nombre de déclenchements par DU,
         trié de manière croissante (le DU ayant le plus grand nombre de déclenchements apparaît en haut).
         """
-        du_ids, counts = np.unique(self.data.du_ids, return_counts=True)
+        du_ids, counts = np.unique(self.data._du_ids, return_counts=True)
         total_antennes = len(du_ids)
-        total_declenchements = len(self.data.du_ids)
+        total_declenchements = len(self.data._du_ids)
         
         # Création d'une liste de tuples (DU, count) et tri en ordre croissant par count.
 
@@ -165,9 +165,9 @@ class Visualizer:
             (c'est-à-dire, on compte une seule fois le trigger d'un même DU par événement).
         """
         # Calcul des totaux (nombre de triggers total par DU)
-        du_ids, counts = np.unique(self.data.du_ids, return_counts=True)
+        du_ids, counts = np.unique(self.data._du_ids, return_counts=True)
         total_antennes = len(du_ids)
-        total_declenchements = len(self.data.du_ids)
+        total_declenchements = len(self.data._du_ids)
 
         # On trie les DU par ordre croissant de nombre de triggers total
         items = list(zip(du_ids, counts))
@@ -180,7 +180,7 @@ class Visualizer:
         unique_counts_per_du = {}   # dictionnaire pour accumuler par DU
         for start, end in event_indices:
             # On récupère les DU uniques dans l'événement (même DU présent plusieurs fois est compté une seule fois)
-            unique_du = np.unique(self.data.du_ids[start:end])
+            unique_du = np.unique(self.data._du_ids[start:end])
             for du in unique_du:
                 unique_counts_per_du[du] = unique_counts_per_du.get(du, 0) + 1
 
@@ -223,10 +223,10 @@ class Visualizer:
         """
         Plot the histogram of event multiplicities (i.e. number of detection units triggered per event).
         """
-        total_declenchements = len(self.data.du_ids)
-        bins = np.arange(0.5, np.max(self.data.multiplicities) + 1.5, 1)
+        total_declenchements = len(self.data._du_ids)
+        bins = np.arange(0.5, np.max(self.data._multiplicities) + 1.5, 1)
         plt.figure(figsize=(10, 6))
-        plt.hist(self.data.multiplicities, bins=bins, color='lightgreen', edgecolor='black')
+        plt.hist(self.data._multiplicities, bins=bins, color='lightgreen', edgecolor='black')
         plt.xlabel("Multiplicity (number of triggered antennas)")
         plt.ylabel("Coincidence index")
         plt.title("Histogram of coincidence multiplicity")
@@ -234,11 +234,11 @@ class Visualizer:
         
         # Highlight abnormal multiplicities (1, 2, 3).
         for mult in range(1, 4):
-            count = np.sum(self.data.multiplicities == mult)
+            count = np.sum(self.data._multiplicities == mult)
             if count > 0:
                 plt.text(mult, count + 1, f"Anormal: {count} / {total_declenchements}", ha='center', color='red', fontsize=12)
-        for mult in range(4, max(self.data.multiplicities) + 1):
-            count = np.sum(self.data.multiplicities == mult)
+        for mult in range(4, max(self.data._multiplicities) + 1):
+            count = np.sum(self.data._multiplicities == mult)
             if count > 0:
                 plt.text(mult, count + 1, f"{count} / {total_declenchements}", ha='center', color='red', fontsize=12)
         plt.axvline(4, color='red', linestyle='--', label="Minimal multiplicity expected : 4")
@@ -254,9 +254,9 @@ class Visualizer:
         duration = (np.max(true_time) - np.min(true_time)) / 1e9
         
         plt.figure()
-        unique_du = np.unique(self.data.du_ids)
+        unique_du = np.unique(self.data._du_ids)
         for du in unique_du:
-            mask = self.data.du_ids == du
+            mask = self.data._du_ids == du
             t_du = (true_time[mask] - np.min(true_time)) / 1e9
             plt.plot(t_du, np.arange(np.sum(mask)), label=f'DU {du}')
         
@@ -265,7 +265,7 @@ class Visualizer:
         # Plot an expected rate line for reference.
         plt.plot(
             [0, (np.max(true_time) - np.min(true_time)) / 1e9],
-            [0, r_exp * (np.max(self.data.trigger_times) - np.min(self.data.trigger_times))],
+            [0, r_exp * (np.max(self.data._trigger_secs) - np.min(self.data._trigger_secs))],
             '--', label='expected'
         )
         plt.legend(loc='best')
@@ -298,7 +298,7 @@ class Visualizer:
         - distance_matrix: 2D numpy array in meters with shape (N, N) where N is the number of unique DUs.
         - du_to_index: a dictionary mapping a DU id to its row/column index in the matrix.
         """
-        du_ids = np.unique(self.data.du_ids)
+        du_ids = np.unique(self.data._du_ids)
         print("Unique DU IDs:", du_ids)
 
         dus_feb = self.get_geolocation()
@@ -334,7 +334,7 @@ class Visualizer:
                 continue
 
             times_event = times_ns[start:end]
-            du_event = self.data.du_ids[start:end]
+            du_event = self.data._du_ids[start:end]
 
             sort_idx = np.argsort(times_event)
             times_sorted = times_event[sort_idx]
@@ -344,17 +344,17 @@ class Visualizer:
             M = len(times_sorted)
 
             causal_indices = [0]
-
+            trigger_causal = True
             for i in range(1, M):
                 for j in range(0, i):
                     d = distance_matrix[du_indices[i], du_indices[j]]
                     propagation_delay = d / self.c
                     deltaT = times_sorted[i] - times_sorted[j] - propagation_delay
                     print(f'couple ;', (i,j), 'deltaT :', deltaT)
-                if deltaT >= 0:
+                if deltaT <= 0:
                     # Tester le Chi² avec i ou j 
-                    trigger_causal = True
-
+                    trigger_causal = False
+                    break
                     # break  # On n'a pas besoin de tester les autres triggers antérieurs
             if trigger_causal:
                 causal_indices.append(i)
@@ -436,7 +436,7 @@ class Visualizer:
 
 
             times_event = times_ns[start:end]
-            du_event = self.data.du_ids[start:end]
+            du_event = self.data._du_ids[start:end]
             
             
             sort_idx = np.argsort(times_event)

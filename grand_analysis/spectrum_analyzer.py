@@ -113,13 +113,13 @@ class SpectrumAnalyzer:
             self.cumulative_events = {}
 
         # Retrieve unique detection units (DUs) in the current file.
-        unique_dus = np.unique(self.data.du_ids)
+        unique_dus = np.unique(self.data._du_ids)
         plt.figure(figsize=(10, 6))
 
         # Process each DU in the current file.
         for du in unique_dus:
-            mask = self.data.du_ids == du
-            traces_du = self.data.traces[mask]  # Expected shape: (n_events, n_channels, n_samples)
+            mask = self.data._du_ids == du
+            traces_du = self.data._traces[mask]  # Expected shape: (n_events, n_channels, n_samples)
             n_events = traces_du.shape[0]
             print(traces_du.shape)
             # Check if the DU has enough events to be processed.
@@ -243,7 +243,7 @@ class SpectrumAnalyzer:
 
             # If du is None, get all unique DU IDs from the data; otherwise, ensure du_list is a list.
             if du is None:
-                du_list = np.unique(self.data.du_ids)
+                du_list = np.unique(self.data._du_ids)
             else:
                 du_list = du if isinstance(du, list) else [du]
 
@@ -258,9 +258,9 @@ class SpectrumAnalyzer:
                 # Select color from the cycle
                 color = colors[idx % len(colors)]
                 
-                mask = self.data.du_ids == current_du if current_du is not None else slice(None)
-                traces = self.data.traces[mask]
-                event_times = self.data.trigger_times[mask] * 1e9 + self.data.trigger_nanos[mask]
+                mask = self.data._du_ids == current_du if current_du is not None else slice(None)
+                traces = self.data._traces[mask]
+                event_times = self.data._trigger_secs[mask] * 1e9 + self.data._trigger_nanos[mask]
                 
                 if traces.size == 0:
                     print(f"No event for DU {current_du}. Analysis stopped.")
@@ -370,11 +370,11 @@ class SpectrumAnalyzer:
     def analyse_mean_amplitude_vs_time(self, axis=1, only_pre_trigger=False):
 
         plt.figure(figsize=(10, 6))
-        unique_dus = np.unique(self.data.du_ids)
+        unique_dus = np.unique(self.data._du_ids)
         
         for du in unique_dus:
-            mask = self.data.du_ids == du
-            traces_du = self.data.traces[mask]  # forme: (n_events, n_channels, n_samples)
+            mask = self.data._du_ids == du
+            traces_du = self.data._traces[mask]  # forme: (n_events, n_channels, n_samples)
             n_events = traces_du.shape[0]
             if n_events == 0:
                 print(f"Aucun événement pour DU {du}.")
@@ -415,12 +415,12 @@ class SpectrumAnalyzer:
         - only_pre_trigger: bool, if True, only use the pre-trigger portion of the trace.
         """
         plt.figure(figsize=(10, 6))
-        unique_dus = np.unique(self.data.du_ids)
+        unique_dus = np.unique(self.data._du_ids)
 
         # Loop over each detection unit
         for du in unique_dus:
-            mask = self.data.du_ids == du
-            traces_du = self.data.traces[mask]  # shape: (n_events, n_channels, n_samples)
+            mask = self.data._du_ids == du
+            traces_du = self.data._traces[mask]  # shape: (n_events, n_channels, n_samples)
             n_events = traces_du.shape[0]
             if n_events == 0:
                 print(f"No events for DU {du}. Skipping.")
@@ -471,7 +471,7 @@ class SpectrumAnalyzer:
         if channels is None:
             channels = [0, 1, 2, 3]
                     
-        traces = self.data.traces  # shape: (n_events, n_channels, n_points)
+        traces = self.data._traces  # shape: (n_events, n_channels, n_points)
         n_events, n_channels, n_points = traces.shape
         amplitude_values = np.zeros((n_events, 4))  # For storing amplitudes per channel
             
@@ -581,7 +581,7 @@ class SpectrumAnalyzer:
           - The normalized average amplitude is defined as: 
                 mean(raw amplitudes) / noise_std   (if noise_std ≠ 0)
         """
-        unique_dus = np.unique(self.data.du_ids)
+        unique_dus = np.unique(self.data._du_ids)
     
         # Define channel names and colors for all channels
         # channel_names = {0: 'filtered Y', 1: 'raw X', 2: 'raw Y', 3: 'filtered X'}
@@ -591,8 +591,8 @@ class SpectrumAnalyzer:
         avg_amplitudes = {du: {} for du in unique_dus}
     
         for du in unique_dus:
-            mask = self.data.du_ids == du
-            traces_du = self.data.traces[mask]  # shape: (n_events, n_channels, n_points)
+            mask = self.data._du_ids == du
+            traces_du = self.data._traces[mask]  # shape: (n_events, n_channels, n_points)
             n_events = traces_du.shape[0]
             for ch in [0, 1, 2, 3]:
                 if ch >= traces_du.shape[1]:
@@ -651,7 +651,7 @@ class SpectrumAnalyzer:
           - Each event's amplitude is then normalized by dividing by noise_std (if noise_std ≠ 0), 
             and the dispersion is computed as the standard deviation of these normalized amplitudes.
         """
-        unique_dus = np.unique(self.data.du_ids)
+        unique_dus = np.unique(self.data._du_ids)
     
         # channel_names = {0: 'filtered Y', 1: 'raw X', 2: 'raw Y', 3: 'filtered X'}
         channel_names = {0: 'float', 1: 'X', 2: 'Y', 3: 'Z'}
@@ -660,8 +660,8 @@ class SpectrumAnalyzer:
         std_amplitudes = {du: {} for du in unique_dus}
     
         for du in unique_dus:
-            mask = self.data.du_ids == du
-            traces_du = self.data.traces[mask]  # shape: (n_events, n_channels, n_points)
+            mask = self.data._du_ids == du
+            traces_du = self.data._traces[mask]  # shape: (n_events, n_channels, n_points)
             n_events = traces_du.shape[0]
             for ch in [0, 1, 2, 3]:
                 if ch >= traces_du.shape[1]:
@@ -731,8 +731,8 @@ class SpectrumAnalyzer:
         avg_norm_amp = {}  # Dictionary to store normalized amplitude for each DU on channel 1
         
         for du in unique_du:
-            mask = self.data.du_ids == du
-            traces_du = self.data.traces[mask]
+            mask = self.data._du_ids == du
+            traces_du = self.data._traces[mask]
             n_events = traces_du.shape[0]
             if n_events == 0:
                 continue
@@ -816,8 +816,8 @@ class SpectrumAnalyzer:
         avg_norm_amp = {du: {} for du in unique_du}
         
         for du in unique_du:
-            mask = self.data.du_ids == du
-            traces_du = self.data.traces[mask]
+            mask = self.data._du_ids == du
+            traces_du = self.data._traces[mask]
             n_events = traces_du.shape[0]
             if n_events == 0:
                 continue
@@ -917,8 +917,8 @@ class SpectrumAnalyzer:
     
         std_norm_amp = {du: {} for du in unique_du}
         for du in unique_du:
-            mask = self.data.du_ids == du
-            traces_du = self.data.traces[mask]
+            mask = self.data._du_ids == du
+            traces_du = self.data._traces[mask]
             n_events = traces_du.shape[0]
             if n_events == 0:
                 continue
