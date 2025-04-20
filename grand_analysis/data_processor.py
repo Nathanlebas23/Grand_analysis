@@ -59,11 +59,14 @@ class DataProcessor:
     @property
     def trigger_pattern_ch(self):
         return self.group_event(self._trigger_pattern_ch)
+
+    @property
+    def _trigger_time(self):
+        return self._trigger_secs.astype(np.float128) + self._trigger_nanos.astype(np.float128) * 1e-9
     
     @property
     def trigger_time(self):
-        t_time = self._trigger_secs.astype(np.float64) + self._trigger_nanos.astype(np.float64) * 1e-9
-        return self.group_event(t_time)
+        return self.group_event(self._trigger_time)
     
 
     def process_files(self):
@@ -133,7 +136,8 @@ class DataProcessor:
         """
         Compute the true time (in nanoseconds) for each event.
         """
-        return (self._trigger_secs * 1e9 + self._trigger_nanos) - min(self._trigger_secs)
+        return (self._trigger_secs * 1e9 + self._trigger_nanos)# - min(self._trigger_secs)
+
 
     def get_unique_du(self):
         """
