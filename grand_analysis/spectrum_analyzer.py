@@ -149,7 +149,7 @@ class SpectrumAnalyzer:
             for ev in range(n_events):
                 for ch in channels:
                     # Use only pre-trigger data if specified, otherwise the full channel trace.
-                    trace = traces_du[ev, 0, :npts] if only_pre_trigger else traces_du[ev, ch, :npts]
+                    trace = traces_du[ev, ch, :npts] if only_pre_trigger else traces_du[ev, ch, :npts]
 
                     # Apply notch filters if requested.
                     if apply_notch:
