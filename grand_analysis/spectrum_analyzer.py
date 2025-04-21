@@ -77,7 +77,7 @@ class SpectrumAnalyzer:
             y[n]  = a1 * y[n-4] + a2 * y[n-8] + y2[n-2] + b5 * y2[n-4] + b6 * y2[n-6]
         return y
 
-    def visualize_PSD(self, channels=[1], xlim=(0, 250), min_spectra=100,
+    def visualize_PSD(self, channels=[1], xlim=(0, 250), ylim=(None, None), min_spectra=100,
                     apply_notch=False, f_sample=None, only_pre_trigger=False,
                     kadc=1.8/16384, VGA_gain=100, R=50):
         """
@@ -149,7 +149,7 @@ class SpectrumAnalyzer:
             for ev in range(n_events):
                 for ch in channels:
                     # Use only pre-trigger data if specified, otherwise the full channel trace.
-                    trace = traces_du[ev, ch, :npts] if only_pre_trigger else traces_du[ev, ch, :npts]
+                    trace = traces_du[ev, ch, :npts]
 
                     # Apply notch filters if requested.
                     if apply_notch:
@@ -211,6 +211,7 @@ class SpectrumAnalyzer:
         if handles:
             plt.legend(loc='best', fontsize=8)
         plt.tight_layout()
+        plt.ylim(*ylim)
         plt.savefig('cumulative_mean_PSD.png')
         plt.show()
 
