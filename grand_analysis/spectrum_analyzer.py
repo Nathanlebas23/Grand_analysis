@@ -77,9 +77,7 @@ class SpectrumAnalyzer:
             y[n]  = a1 * y[n-4] + a2 * y[n-8] + y2[n-2] + b5 * y2[n-4] + b6 * y2[n-6]
         return y
 
-    def visualize_PSD(self, channels=[1], xlim=(0, 250), ylim=(None, None), min_spectra=100,
-                    apply_notch=False, f_sample=None, only_pre_trigger=False,
-                    kadc=1.8/16384, VGA_gain=100, R=50):
+    def visualize_PSD(self, channels=[1], xlim=(0, 250), ylim=(None, None), min_spectra=100):
         """
         Visualizes and updates the cumulative mean Power Spectral Density (PSD)
         for each Detection Unit (DU) and specified channels.
@@ -100,102 +98,13 @@ class SpectrumAnalyzer:
         - R: resistance used in PSD normalization.
         """
 
-        # Set sampling frequency if not provided
-        if f_sample is None:
-            f_sample = 1.0 / self.dt
-
-        # Initialize cumulative dictionaries as class attributes if not already present.
-        # self.cumulative_psd stores for each DU a dictionary with key=channel and value=cumulative mean PSD array.
-        # self.cumulative_events stores the total number of events processed for each DU.
-        if not hasattr(self, 'cumulative_psd'):
-            self.cumulative_psd = {}
-        if not hasattr(self, 'cumulative_events'):
-            self.cumulative_events = {}
-
-        # Retrieve unique detection units (DUs) in the current file.
-        unique_dus = np.unique(self.data._du_ids)
-        plt.figure(figsize=(10, 6))
-
-        # Process each DU in the current file.
-        for du in unique_dus:
-            mask = self.data._du_ids == du
-            traces_du = self.data._traces[mask]  # Expected shape: (n_events, n_channels, n_samples)
-            n_events = traces_du.shape[0]
-            print(traces_du.shape)
-            # Check if the DU has enough events to be processed.
-            if n_events < min_spectra:
-                print(f"DU {du} has only {n_events} spectra (< {min_spectra}). Skipping.")
-                continue
-
-            npts_original = traces_du.shape[2]
-            npts = 250 if only_pre_trigger else npts_original
-            if npts > npts_original:
-                print(f"Warning: Requested {npts} points but only {npts_original} available. Truncating to available size.")
-                npts = npts_original
-
-            # Calculate frequency resolution and generate frequency arrays.
-            delta_nu = f_sample / npts  # Frequency bin width in Hz
-            freq_hz = rfftfreq(npts, self.dt)
-            freq_MHz = freq_hz / 1e6
-
-            # Create a Blackman window and compute its power correction factor.
-            window = np.blackman(npts)
-            power_window = np.sum(window ** 2) / npts
-
-            # Initialize PSD accumulator for each channel.
-            psd_accum = {ch: np.zeros(len(freq_hz)) for ch in channels}
-
-            # Loop through all events and channels to compute PSD.
-            for ev in range(n_events):
-                for ch in channels:
-                    # Use only pre-trigger data if specified, otherwise the full channel trace.
-                    trace = traces_du[ev, ch, :npts]
-
-                    # Apply notch filters if requested.
-                    if apply_notch:
-                        for filt_id in [1, 2, 3, 4]:
-                            trace = SpectrumAnalyzer.apply_notch_filter(trace, filt_id, f_sample)
-
-                    # Apply windowing and compute the FFT.
-                    trace_win = trace * window
-                    fft_val = rfft(trace_win)
-                    psd_event = np.abs(fft_val) ** 2 / power_window
-                    psd_accum[ch] += psd_event
-
-            # Process each channel to compute the mean PSD and update cumulative averages.
+        # Plot the updated cumulative PSD for the current DU and channel.
+        for du_id in self.data.cumulative_psd:
+            if self.data.nspectra_per_du[du_id] < min_spectra:
+                print(f"DU {du_id} has only {self.data.nspectra_per_du[du_id]} spectra (< {min_spectra}). Skipping.")
             for ch in channels:
-                # Calculate the mean PSD for this file.
-                mean_psd = psd_accum[ch] / n_events
-                mean_psd *= (kadc ** 2) * VGA_gain  # Convert ADC² to V²
-
-                # Normalize the PSD: divide by (N² * delta_nu) and then convert V²/Hz to V²/MHz.
-                mean_psd /= (npts ** 2 * delta_nu) * R
-                mean_psd *= 1e6
-
-                # Adjust for single-sided FFT (except DC and Nyquist).
-                if len(mean_psd) > 2:
-                    mean_psd[1:-1] *= 2
-
-                # Update cumulative average using weighted incremental update.
-                if du in self.cumulative_psd:
-                    n_prev = self.cumulative_events[du]
-                    # If the channel already exists for this DU, update its cumulative average.
-                    if ch in self.cumulative_psd[du]:
-                        self.cumulative_psd[du][ch] = (
-                            self.cumulative_psd[du][ch] * n_prev + mean_psd * n_events
-                        ) / (n_prev + n_events)
-                    else:
-                        # If channel data is new, initialize it.
-                        self.cumulative_psd[du][ch] = mean_psd.copy()
-                    self.cumulative_events[du] += n_events
-                else:
-                    # Initialize cumulative PSD and event counter for new DU.
-                    self.cumulative_psd[du] = {ch: mean_psd.copy()}
-                    self.cumulative_events[du] = n_events
-
-                # Plot the updated cumulative PSD for the current DU and channel.
-                plt.semilogy(freq_MHz, self.cumulative_psd[du][ch],
-                            lw=1, label=f'DU {du} - Ch{ch}')
+                plt.semilogy(self.data.freq_MHz, self.data.cumulative_psd[du_id][ch],
+                            lw=1, label=f'DU {du_id} - Ch{ch}')
 
         # Configure and save the plot.
         plt.xlabel("Frequency (MHz)")
@@ -203,9 +112,9 @@ class SpectrumAnalyzer:
         plt.xlim(xlim)
         plt.grid(True, linestyle='--', alpha=0.7)
         title = "Cumulative Mean PSD Spectrum"
-        if only_pre_trigger:
+        if self.data.only_pre_trigger:
             title = "Cumulative Mean PSD - Pre-trigger Only"
-        title += " (with notch filters)" if apply_notch else " (no notch)"
+        title += " (with notch filters)" if self.data.apply_notch else " (no notch)"
         plt.title(title)
         handles, labels = plt.gca().get_legend_handles_labels()
         if handles:
