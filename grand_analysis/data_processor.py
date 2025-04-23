@@ -2,6 +2,7 @@ import os
 import numpy as np
 import grand.dataio as rt 
 import grand.dataio.root_files as gdr
+import uproot as ur
 
 from scipy.signal import butter, filtfilt, lfilter, hilbert
 # import grand.dataio.root_trees as rt  # Version CC
@@ -41,7 +42,7 @@ class DataProcessor:
     def __init__(self, 
                  file_list = None, pre_trigger=False, sampling_freq = 500e6, 
                  apply_notch=False,
-                 kadc=1.8/16384, VGA_gain=100, R=50, freq_band_MHz = (None, None)):
+                 kadc=1.8/16384, VGA_gain=100, R=50, freq_band_MHz=(None, None)):
         self.file_list = file_list
         self.pre_trigger = pre_trigger
         # Initialize containers for event data.
@@ -57,15 +58,17 @@ class DataProcessor:
         self._trigger_pattern_ch = []  # trigger pattern for each channel
         self._file_idx = []
         self._event_idx = []
-
         self._traces_std = []
         self._traces_max = []
+        self._traces_std_freqband = []
+        self._traces_max_freqband = []
+        
         self.dt = 1/sampling_freq
         self.apply_notch = apply_notch
         self.kadc = kadc
         self.VGA_gain = VGA_gain
         self.R = R
-        self.fre_band_MHz = freq_band_MHz
+        self.freq_band_MHz = freq_band_MHz
 
     def group_event(self, quantity):
         cum_mult = list(self.cum_mult)
@@ -120,56 +123,58 @@ class DataProcessor:
         For each event, loop over all activated detection units (DUs) so that no information is lost.
         """
         for f_idx, fname in enumerate(self.file_list):
-            root_file = rt.DataFile(fname)
-            n_entries = root_file.tadc.get_number_of_entries()
-            print(f"Loading file:", fname)
+            with ur.open(fname) as root_file:
+                print(f"Loading file:", fname)
+                n_entries = len(root_file['tadc']['event_size'].array())
+                trigger_pattern_ch = root_file['tadc']['trigger_pattern_ch'].array() #.as_type()
+                trigger_pattern_10s = root_file['tadc']['trigger_pattern_10s'].array() #.as_type()
+                du_seconds = root_file['tadc']['du_seconds'].array() #.as_type()
+                du_id = root_file['tadc']['du_id'].array()
+                du_nanoseconds = root_file['tadc']['du_nanoseconds'].array()
+                traces = root_file['tadc']['trace_ch'].array()
 
-            for entry in range(int(n_entries)) :
-            
-                # Retrieve ADC and raw voltage data for the current event.
-                root_file.tadc.get_entry(entry)
-                root_file.trawvoltage.get_entry(entry)
-                
+                gps_longs = root_file['trawvoltage']['gps_long'].array()
+                gps_lats = root_file['trawvoltage']['gps_lat'].array()
+                gps_alts = root_file['trawvoltage']['gps_alt'].array()
 
-                # Check trigger conditions:
-                # - At least one False in trigger_pattern_10s.
-                # - At least one True in trigger_pattern_ch.
-                if ~np.all(root_file.tadc.trigger_pattern_10s) and np.any(root_file.tadc._trigger_pattern_ch):
+
+
+            for entry in range(int(n_entries)):
+                if ~np.all(trigger_pattern_10s[entry].to_numpy()) and np.any(trigger_pattern_ch[entry].to_numpy()):
                     # Skip events with abnormal GPS time (using first element pour le test)
                     if root_file.tadc.du_seconds[0] > 2045518457:
                         continue
 
-
-                    
-                    
                 # Determine the number of triggered detection units for the event.
-                multiplicity = len(root_file.tadc.du_id) # Give the DUs triggered in the event
+                multiplicity = len(du_id[entry]) # Give the DUs triggered in the event
                 self.mult.append(multiplicity)
-                
-                # Pour chaque DU activée dans l'événement, on enregistre toutes les informations.
+
+                self._multiplicities += [multiplicity]*multiplicity
+                self._file_idx += [f_idx]*multiplicity
+                self._event_idx += [entry]*multiplicity
+
+                self._trigger_secs += du_seconds[entry].to_list()
+                self._trigger_nanos += du_nanoseconds[entry].to_list()
+                self._du_ids += du_id[entry].to_list()
+                self._trigger_pattern_ch += trigger_pattern_ch[entry].to_list()
+                self._du_long += gps_longs[entry].to_list()
+                self._du_lat += gps_lats[entry].to_list()
+                self._du_alt += gps_alts[entry].to_list()
+
                 for j in range(multiplicity):
-                    self._multiplicities.append(multiplicity)
-                    self._trigger_secs.append(root_file.tadc.du_seconds[j])
-                    self._trigger_nanos.append(root_file.tadc.du_nanoseconds[j])
-                    self._du_ids.append(root_file.tadc.du_id[j])
-                    self._du_long.append(root_file.trawvoltage.gps_long[j])
-                    self._du_lat.append(root_file.trawvoltage.gps_lat[j])
-                    self._du_alt.append(root_file.trawvoltage.gps_alt[j])
-                    self._trigger_pattern_ch.append(root_file.tadc._trigger_pattern_ch[j])
 
+                    trace = traces[entry][j].to_numpy()
+                    std, std_band_freq = self.compute_std(trace)
+                    max, max_band_freq = self.compute_max(trace)
 
-                    trace = root_file.tadc.trace_ch[j]
-                    self._traces_std.append(self.compute_std(trace))
-                    self._traces_max.append(self.compute_max(trace))
+                    # std = self.compute_std(trace)
+                    # max = self.compute_max(trace)
 
-                    # event_traces = []
-                    # for ch in range(4):
-                    #     event_traces.append(root_file.tadc.trace_ch[j][ch])
-                    # self._traces.append(event_traces)
+                    self._traces_std.append(std)
+                    self._traces_max.append(max)
 
-                    self._file_idx.append(f_idx)
-                    self._event_idx.append(entry)
-            root_file.close()
+                    self._traces_std_freqband.append(std_band_freq)
+                    self._traces_max_freqband.append(max_band_freq)
 
         self._trigger_secs = np.array(self._trigger_secs)
         self._trigger_nanos = np.array(self._trigger_nanos)
@@ -186,38 +191,68 @@ class DataProcessor:
 
         self._traces_std = np.array(self._traces_std)
         self._traces_max = np.array(self._traces_max) 
+        self._traces_std_freqband = np.array(self._traces_std_freqband)
+        self._traces_max_freqband = np.array(self._traces_max_freqband) 
 
         self.compute_psd()
 
     def compute_std(self, trace):
-        if not((self.fre_band_MHz[0] is None) ^ (self.fre_band_MHz[1] is None)):
-            if self.fre_band_MHz[0] is not(None):
-                lower_band = self.fre_band_MHz[0]
-                upper_band = self.fre_band_MHz[1]
-                trace = _butter_bandpass_filter(trace, lower_band, upper_band, 1/self.dt*1e-6) 
-        else:
-            raise TypeError
-        
         if self.pre_trigger:
-            traces_std = (trace[:,:250].astype(np.float32).std(axis=1))
+            traces_std = (trace[:,:250].astype(np.float32).std(axis=-1))
         else:
-            traces_std = (trace[:,:].astype(np.float32).std(axis=1))
-        return traces_std
-    
-    def compute_max(self, trace):
-        if not((self.fre_band_MHz[0] is None) ^ (self.fre_band_MHz[1] is None)):
-            if self.fre_band_MHz[0] is not(None):
-                lower_band = self.fre_band_MHz[0]
-                upper_band = self.fre_band_MHz[1]
-                trace = _butter_bandpass_filter(trace, lower_band, upper_band, 1/self.dt*1e-6) 
+            traces_std = (trace[:,:].astype(np.float32).std(axis=-1))
+
+
+        if self.freq_band_MHz[0] is None:
+            lower_band = 60
+            upper_band = 80
         else:
-            raise TypeError
+            lower_band = self.freq_band_MHz[0]
+            upper_band = self.freq_band_MHz[1]
+        trace = _butter_bandpass_filter(trace, lower_band, upper_band, 1/self.dt*1e-6) 
 
         if self.pre_trigger:
-            traces_max = (np.abs(trace[:,:250].astype(np.float32)).max(axis=1))
+            traces_std_band = (trace[:,:250].astype(np.float32).std(axis=-1))
         else:
-            traces_max = (np.abs(trace[:,:].astype(np.float32)).max(axis=1))
-        return traces_max
+            traces_std_band = (trace[:,:].astype(np.float32).std(axis=-1))
+        return traces_std, traces_std_band
+    
+
+    def compute_max(self, trace):
+        if self.pre_trigger:
+            traces_max = np.abs(trace[:,:250].astype(np.float32)).max(axis=-1)
+        else:
+            traces_max = np.abs(trace[:,:].astype(np.float32)).max(axis=-1)
+
+
+        if self.freq_band_MHz[0] is None:
+            lower_band = 60
+            upper_band = 80
+        else:
+            lower_band = self.freq_band_MHz[0]
+            upper_band = self.freq_band_MHz[1]
+        trace = _butter_bandpass_filter(trace, lower_band, upper_band, 1/self.dt*1e-6) 
+
+        if self.pre_trigger:
+            traces_max_band = np.abs(trace[:,:250].astype(np.float32)).max(axis=-1)
+        else:
+            traces_max_band = np.abs(trace[:,:].astype(np.float32)).max(axis=-1)
+        return traces_max, traces_max_band
+    
+    # def compute_max(self, trace):
+    #     if not((self.freq_band_MHz[0] is None) ^ (self.freq_band_MHz[1] is None)):
+    #         if self.freq_band_MHz[0] is not(None):
+    #             lower_band = self.freq_band_MHz[0]
+    #             upper_band = self.freq_band_MHz[1]
+    #             trace = _butter_bandpass_filter(trace, lower_band, upper_band, 1/self.dt*1e-6) 
+    #     else:
+    #         raise TypeError
+
+    #     if self.pre_trigger:
+    #         traces_max = (np.abs(trace[:,:250].astype(np.float32)).max(axis=1))
+    #     else:
+    #         traces_max = (np.abs(trace[:,:].astype(np.float32)).max(axis=1))
+    #     return traces_max
     
     def compute_psd(self):
         # Set sampling frequency if not provided
@@ -229,14 +264,15 @@ class DataProcessor:
         # Process each DU in the current file.    
 
         for f_idx, fname in enumerate(self.file_list):
-            root_file = rt.DataFile(fname)
-            n_entries = root_file.tadc.get_number_of_entries()
+            with ur.open(fname) as root_file:
+                print(f"Loading file:", fname)
+                n_entries = len(root_file['tadc']['event_size'].array())
+                du_ids = root_file['tadc']['du_id'].array()
+                traces = root_file['tadc']['trace_ch'].array()
+                
             for entry in range(int(n_entries)) :
-                root_file.tadc.get_entry(entry)
-
-                du_ids = root_file.tadc.du_id
-                for j, du_id in enumerate(du_ids):
-                    trace = root_file.tadc.trace_ch[j]
+                for j, du_id in enumerate(du_ids[entry]):
+                    trace = traces[entry][j].to_numpy()
                     npts = 250 if self.pre_trigger else trace.shape[-1]
                     if npts > trace.shape[-1]:
                         print(f"Warning: Requested {npts} points but only {trace.shape[-1]} available. Truncating to available size.")
@@ -262,10 +298,10 @@ class DataProcessor:
                     else:
                         psd_per_du[du_id] = psd_event_du
                         nspetra_per_du[du_id] = 1
-            root_file.close()
 
-        lower_band = 0 if self.fre_band_MHz[0] is None else self.fre_band_MHz[0]
-        upper_band = freq_MHz[-1] if self.fre_band_MHz[1] is None else self.fre_band_MHz[1]
+        lower_band = 0 if self.freq_band_MHz[0] is None else self.freq_band_MHz[0]
+        upper_band = freq_MHz[-1] if self.freq_band_MHz[1] is None else self.freq_band_MHz[1]
+
         in_band = (freq_MHz>=lower_band) & (freq_MHz<= upper_band)
         for key in psd_per_du:
             # Calculate the mean PSD for this file.
