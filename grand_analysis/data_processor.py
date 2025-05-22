@@ -3,6 +3,7 @@ import numpy as np
 import grand.dataio as rt 
 import grand.dataio.root_files as gdr
 import uproot as ur
+from collections import defaultdict
 
 from scipy.signal import butter, filtfilt, lfilter, hilbert
 # import grand.dataio.root_trees as rt  # Version CC
@@ -42,7 +43,8 @@ class DataProcessor:
     def __init__(self, 
                  file_list = None, pre_trigger=False, sampling_freq = 500e6, 
                  apply_notch=False,
-                 kadc=1.8/16384, VGA_gain=100, R=50, freq_band_MHz=(None, None)):
+                 kadc=1.8/16384, VGA_gain=100, R=50, freq_band_MHz=(None, None),
+                 keep_traces = False):
         self.file_list = file_list
         self.pre_trigger = pre_trigger
         # Initialize containers for event data.
@@ -57,12 +59,16 @@ class DataProcessor:
         self.mult = []            # multiplicity of the event
         self._trigger_pattern_ch = []  # trigger pattern for each channel
         self._file_idx = []
+        self._file_names = []
         self._event_idx = []
         self._traces_std = []
         self._traces_max = []
         self._traces_std_freqband = []
         self._traces_max_freqband = []
-        
+        self._traces = []
+
+
+        self.keep_traces = keep_traces
         self.dt = 1/sampling_freq
         self.apply_notch = apply_notch
         self.kadc = kadc
@@ -77,42 +83,48 @@ class DataProcessor:
     @property
     def trigger_secs(self):
         return self.group_event(self._trigger_secs)
-    
     @property
     def trigger_nanos(self):
         return self.group_event(self._trigger_nanos)
-    
     @property
     def traces(self):
-        return self.group_event(self._traces)
-    
+        if self.keep_traces:
+            return self.group_event(self._traces)
+        return np.array(())
     @property
     def du_ids(self):
         return self.group_event(self._du_ids)
-    
     @property
     def du_long(self):
         return self.group_event(self._du_long)
-    
     @property
     def du_lat(self):
         return self.group_event(self._du_lat)
-    
     @property
     def multiplicities(self):
         return self.group_event(self._multiplicities)
-    
     @property
     def trigger_pattern_ch(self):
         return self.group_event(self._trigger_pattern_ch)
-
     @property
     def _trigger_time(self):
         return self._trigger_secs.astype(np.float128) + self._trigger_nanos.astype(np.float128) * 1e-9
-    
     @property
     def trigger_time(self):
         return self.group_event(self._trigger_time)
+    @property
+    def traces_std(self):
+        return self.group_event(self._traces_std)
+    @property
+    def traces_max(self):
+        return self.group_event(self._traces_max)
+    @property
+    def traces_std_freqband(self):
+        return self.group_event(self._traces_std_freqband)
+    @property
+    def traces_max_freqband(self):
+        return self.group_event(self._traces_max_freqband)
+
     
 
     def process_files(self):
@@ -142,7 +154,8 @@ class DataProcessor:
             for entry in range(int(n_entries)):
                 if ~np.all(trigger_pattern_10s[entry].to_numpy()) and np.any(trigger_pattern_ch[entry].to_numpy()):
                     # Skip events with abnormal GPS time (using first element pour le test)
-                    if root_file.tadc.du_seconds[0] > 2045518457:
+                    if du_seconds[0][0] > 2045518457:
+                        print(du_seconds[0][0])
                         continue
 
                 # Determine the number of triggered detection units for the event.
@@ -151,6 +164,7 @@ class DataProcessor:
 
                 self._multiplicities += [multiplicity]*multiplicity
                 self._file_idx += [f_idx]*multiplicity
+                self._file_names += [fname]*multiplicity
                 self._event_idx += [entry]*multiplicity
 
                 self._trigger_secs += du_seconds[entry].to_list()
@@ -164,6 +178,8 @@ class DataProcessor:
                 for j in range(multiplicity):
 
                     trace = traces[entry][j].to_numpy()
+                    if self.keep_traces:
+                        self._traces.append(trace)
                     std, std_band_freq = self.compute_std(trace)
                     max, max_band_freq = self.compute_max(trace)
 
@@ -184,6 +200,7 @@ class DataProcessor:
         self._du_alt = np.array(self._du_alt)
         self._multiplicities = np.array(self._multiplicities)
         self._file_idx=np.array(self._file_idx)
+        self._file_names=np.array(self._file_names)
         self._event_idx=np.array(self._event_idx)
         # self._traces = np.array(self._traces, dtype = object)
         self._trigger_pattern_ch = np.array(self._trigger_pattern_ch)
@@ -254,13 +271,13 @@ class DataProcessor:
     #         traces_max = (np.abs(trace[:,:].astype(np.float32)).max(axis=1))
     #     return traces_max
     
-    def compute_psd(self):
+    def compute_psd(self, n_traces_max=np.inf):
         # Set sampling frequency if not provided
 
         # Retrieve unique detection units (DUs) in the current file.
         
         psd_per_du = dict()
-        nspetra_per_du = dict()
+        nspetra_per_du = defaultdict(int)
         # Process each DU in the current file.    
 
         for f_idx, fname in enumerate(self.file_list):
@@ -272,6 +289,8 @@ class DataProcessor:
                 
             for entry in range(int(n_entries)) :
                 for j, du_id in enumerate(du_ids[entry]):
+                    if n_traces_max <= nspetra_per_du[du_id]:
+                        continue
                     trace = traces[entry][j].to_numpy()
                     npts = 250 if self.pre_trigger else trace.shape[-1]
                     if npts > trace.shape[-1]:
@@ -292,12 +311,11 @@ class DataProcessor:
                     fft_val = np.fft.rfft(trace_win)
                     psd_event_du = np.abs(fft_val) ** 2 / power_window
 
+                    nspetra_per_du[du_id] += 1
                     if du_id in psd_per_du:
                         psd_per_du[du_id] += psd_event_du
-                        nspetra_per_du[du_id] += 1
                     else:
                         psd_per_du[du_id] = psd_event_du
-                        nspetra_per_du[du_id] = 1
 
         lower_band = 0 if self.freq_band_MHz[0] is None else self.freq_band_MHz[0]
         upper_band = freq_MHz[-1] if self.freq_band_MHz[1] is None else self.freq_band_MHz[1]

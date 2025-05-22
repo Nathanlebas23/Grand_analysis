@@ -92,7 +92,7 @@ class SpectrumAnalyzer:
         - min_spectra: minimum number of spectra (events) required for analysis.
         - apply_notch: bool, if True applies all four notch filters to each trace.
         - f_sample: sampling frequency in Hz. If None, set to 1/self.dt.
-        - only_pre_trigger: if True, uses only channel 0 and truncates traces to 250 samples.
+        - pre_trigger: if True, uses only channel 0 and truncates traces to 250 samples.
         - kadc: ADC conversion factor in V/ADC unit.
         - VGA_gain: voltage gain of the analog chain.
         - R: resistance used in PSD normalization.
@@ -112,7 +112,7 @@ class SpectrumAnalyzer:
         plt.xlim(xlim)
         plt.grid(True, linestyle='--', alpha=0.7)
         title = "Cumulative Mean PSD Spectrum"
-        if self.data.only_pre_trigger:
+        if self.data.pre_trigger:
             title = "Cumulative Mean PSD - Pre-trigger Only"
         title += " (with notch filters)" if self.data.apply_notch else " (no notch)"
         plt.title(title)
@@ -127,7 +127,7 @@ class SpectrumAnalyzer:
 
     def analyze_baseline_vs_time(self, channel=[1], freq_band=None, du=None, apply_notch=False, 
                                 f_sample=None, kadc=1.8/16384, R=50, VGA_gain=100, 
-                                fit_sine=False, only_pre_trigger=False):
+                                fit_sine=False, pre_trigger=False):
             """
             Analyze the standard deviation time within a specified frequency band.
             For each event, the PSD is computed and then integrated over the frequency band of interest 
@@ -145,7 +145,7 @@ class SpectrumAnalyzer:
             - R: Impedance (default: 50 Ohm).
             - VGA_gain: VGA gain (default: 100).
             - fit_sine: bool, if True, perform a sine fit on the standard deviation vs. time.
-            - only_pre_trigger: bool, if True, use only the pre-trigger part.
+            - pre_trigger: bool, if True, use only the pre-trigger part.
             """
             
             if f_sample is None:
@@ -176,7 +176,7 @@ class SpectrumAnalyzer:
                     print(f"No event for DU {current_du}. Analysis stopped.")
                     continue
 
-                if only_pre_trigger:
+                if pre_trigger:
                     traces = traces[:, 0, :250]  # Shape (n_events, 250)
                     npts = traces.shape[1]
                 else:
@@ -209,7 +209,7 @@ class SpectrumAnalyzer:
                 band_mask = (freq_MHz >= f_low) & (freq_MHz <= f_high)
 
                 for ev in range(n_events):
-                    if not only_pre_trigger:
+                    if not pre_trigger:
                         trace_to_use = traces[ev, channel, :npts].astype(float)
                         if isinstance(channel, list) and len(channel) > 1:
                             trace_to_use = np.sqrt(np.sum(trace_to_use**2, axis=0))
@@ -277,7 +277,7 @@ class SpectrumAnalyzer:
             plt.savefig('Baseline_202250204.png')
             plt.show()
 
-    def analyse_mean_amplitude_vs_time(self, axis=1, only_pre_trigger=False):
+    def analyse_mean_amplitude_vs_time(self, axis=1, pre_trigger=False):
 
         plt.figure(figsize=(10, 6))
         unique_dus = np.unique(self.data._du_ids)
@@ -295,7 +295,7 @@ class SpectrumAnalyzer:
             event_times = event_times[mask] 
             
             # Sélection de la portion de trace à analyser
-            if only_pre_trigger:
+            if pre_trigger:
                 data_to_analyze = traces_du[:, axis, :250]
             else:
                 data_to_analyze = traces_du[:, axis, :]
@@ -316,13 +316,13 @@ class SpectrumAnalyzer:
 
 
 
-    def analyse_std_baseline_vs_time(self, axis=1, only_pre_trigger=False):
+    def analyse_std_baseline_vs_time(self, axis=1, pre_trigger=False):
         """
         Plots the standard deviation of the trace vs time for each Detection Unit (DU) for a chosen axis.
 
         Parameters:
         - axis: int, the channel index to analyze (default: 0).
-        - only_pre_trigger: bool, if True, only use the pre-trigger portion of the trace.
+        - pre_trigger: bool, if True, only use the pre-trigger portion of the trace.
         """
         plt.figure(figsize=(10, 6))
         unique_dus = np.unique(self.data._du_ids)
@@ -339,7 +339,7 @@ class SpectrumAnalyzer:
             event_times = self.data.compute_true_time()
             event_times = event_times[mask] 
 
-            if only_pre_trigger:
+            if pre_trigger:
                 data_to_analyze = traces_du[:, 0, :250]
                 npts = 250
             else:
@@ -354,7 +354,7 @@ class SpectrumAnalyzer:
 
         plt.xlabel("Time (ns)")
         plt.ylabel("Standard Deviation")
-        plt.title(f"Standard Deviation of Trace vs Time (Axis {axis}{', Pre-trigger' if only_pre_trigger else ''})")
+        plt.title(f"Standard Deviation of Trace vs Time (Axis {axis}{', Pre-trigger' if pre_trigger else ''})")
         plt.legend(loc='best')
         plt.grid(True, linestyle='--', alpha=0.7)
         plt.tight_layout()
